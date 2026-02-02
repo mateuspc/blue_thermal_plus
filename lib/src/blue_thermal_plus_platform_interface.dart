@@ -17,8 +17,8 @@ abstract class BlueThermalPlusPlatform extends PlatformInterface {
   }
 
   /// Stream único de eventos (status, deviceFound, connected, etc.)
-  Stream<PrinterEvent> get events => throw UnimplementedError('events not implemented');
-
+  Stream<PrinterEvent> get events =>
+      throw UnimplementedError('events not implemented');
 
   Future<void> configure(PrinterConfig config) {
     throw UnimplementedError('configure() has not been implemented.');
@@ -44,14 +44,13 @@ abstract class BlueThermalPlusPlatform extends PlatformInterface {
   }
 
   Future<void> printRawBytes(
-      Uint8List data, {
-        PrinterTransport transport = PrinterTransport.ble,
-      }) {
+    Uint8List data, {
+    PrinterTransport transport = PrinterTransport.ble,
+  }) {
     throw UnimplementedError('printRawBytes not implemented');
   }
 
   Future<List<PrinterDevice>> getDiscoveredDevices({
     PrinterTransport transport = PrinterTransport.ble,
   });
-
 }

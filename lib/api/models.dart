@@ -29,17 +29,12 @@ class PrinterEvent {
   final PrinterDevice? device;
   final List<String>? protocols; // opcional (EA classic)
 
-  PrinterEvent({
-    required this.type,
-    this.message,
-    this.device,
-    this.protocols,
-  });
+  PrinterEvent({required this.type, this.message, this.device, this.protocols});
 
   factory PrinterEvent.fromMap(Map<dynamic, dynamic> map) {
     final typeStr = (map['type'] as String?) ?? 'status';
     final type = PrinterEventType.values.firstWhere(
-          (e) => e.name == typeStr,
+      (e) => e.name == typeStr,
       orElse: () => PrinterEventType.status,
     );
 
@@ -47,7 +42,9 @@ class PrinterEvent {
     final device = deviceVal is Map ? PrinterDevice.fromMap(deviceVal) : null;
 
     final protVal = map['protocols'];
-    final protocols = protVal is List ? protVal.map((e) => e.toString()).toList() : null;
+    final protocols = protVal is List
+        ? protVal.map((e) => e.toString()).toList()
+        : null;
 
     return PrinterEvent(
       type: type,

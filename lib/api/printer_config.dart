@@ -38,10 +38,7 @@ class ClassicConfig {
 
   final int autoDisconnectMs; // default: 3000
 
-  const ClassicConfig({
-    this.preferredProtocol,
-    this.autoDisconnectMs = 3000,
-  });
+  const ClassicConfig({this.preferredProtocol, this.autoDisconnectMs = 3000});
 
   Map<String, dynamic> toMap() => {
     "preferredProtocol": preferredProtocol,

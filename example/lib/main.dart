@@ -191,7 +191,6 @@ class _PluginTestPageState extends State<PluginTestPage> {
     _log(">>> configure(profile=esp32)");
     await bt.configure(profile);
 
-
     _log(">>> connect(${d.id}, $transport)");
     await bt.connect(deviceId: d.id, transport: transport);
   }
@@ -250,8 +249,14 @@ class _PluginTestPageState extends State<PluginTestPage> {
                   DropdownButton<PrinterTransport>(
                     value: transport,
                     items: const [
-                      DropdownMenuItem(value: PrinterTransport.ble, child: Text("BLE")),
-                      DropdownMenuItem(value: PrinterTransport.classic, child: Text("Classic")),
+                      DropdownMenuItem(
+                        value: PrinterTransport.ble,
+                        child: Text("BLE"),
+                      ),
+                      DropdownMenuItem(
+                        value: PrinterTransport.classic,
+                        child: Text("Classic"),
+                      ),
                     ],
                     onChanged: (v) {
                       if (v == null) return;
@@ -341,10 +346,7 @@ class _PluginTestPageState extends State<PluginTestPage> {
                     },
                   ),
                 ),
-                Expanded(
-                  flex: 2,
-                  child: _LogPanel(logs: logs),
-                ),
+                Expanded(flex: 2, child: _LogPanel(logs: logs)),
               ],
             ),
           ),
@@ -385,7 +387,10 @@ class _StatusCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text("Status", style: Theme.of(context).textTheme.titleMedium),
+                  Text(
+                    "Status",
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                   const SizedBox(height: 4),
                   Text(status),
                   const SizedBox(height: 8),
@@ -394,10 +399,12 @@ class _StatusCard extends StatelessWidget {
                     children: [
                       Chip(label: Text("transport: ${transport.name}")),
                       Chip(label: Text(scanning ? "scanning" : "idle")),
-                      Chip(label: Text(connected ? "connected" : "disconnected")),
+                      Chip(
+                        label: Text(connected ? "connected" : "disconnected"),
+                      ),
                       Chip(label: Text(ready ? "ready" : "not ready")),
                     ],
-                  )
+                  ),
                 ],
               ),
             ),
@@ -435,21 +442,23 @@ class _DeviceList extends StatelessWidget {
             child: devices.isEmpty
                 ? const Center(child: Text("Nenhum device ainda"))
                 : ListView.builder(
-              itemCount: devices.length,
-              itemBuilder: (context, i) {
-                final d = devices[i];
-                final selected = d.id == selectedId;
+                    itemCount: devices.length,
+                    itemBuilder: (context, i) {
+                      final d = devices[i];
+                      final selected = d.id == selectedId;
 
-                return ListTile(
-                  selected: selected,
-                  leading: const Icon(Icons.bluetooth),
-                  title: Text(d.name),
-                  subtitle: Text(d.id),
-                  trailing: selected ? const Icon(Icons.check_circle) : null,
-                  onTap: () => onSelect(d),
-                );
-              },
-            ),
+                      return ListTile(
+                        selected: selected,
+                        leading: const Icon(Icons.bluetooth),
+                        title: Text(d.name),
+                        subtitle: Text(d.id),
+                        trailing: selected
+                            ? const Icon(Icons.check_circle)
+                            : null,
+                        onTap: () => onSelect(d),
+                      );
+                    },
+                  ),
           ),
         ],
       ),
@@ -478,18 +487,24 @@ class _LogPanel extends StatelessWidget {
             child: logs.isEmpty
                 ? const Center(child: Text("Sem logs ainda"))
                 : ListView.builder(
-              itemCount: logs.length,
-              itemBuilder: (context, i) {
-                final l = logs[i];
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  child: Text(
-                    l,
-                    style: const TextStyle(fontFamily: "monospace", fontSize: 12),
+                    itemCount: logs.length,
+                    itemBuilder: (context, i) {
+                      final l = logs[i];
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        child: Text(
+                          l,
+                          style: const TextStyle(
+                            fontFamily: "monospace",
+                            fontSize: 12,
+                          ),
+                        ),
+                      );
+                    },
                   ),
-                );
-              },
-            ),
           ),
         ],
       ),

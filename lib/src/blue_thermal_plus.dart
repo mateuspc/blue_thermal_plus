@@ -37,9 +37,9 @@ class BlueThermalPlus {
   }
 
   Future<void> printRawBytes(
-      Uint8List data, {
-        PrinterTransport transport = PrinterTransport.ble,
-      }) {
+    Uint8List data, {
+    PrinterTransport transport = PrinterTransport.ble,
+  }) {
     return BlueThermalPlusPlatform.instance.printRawBytes(
       data,
       transport: transport,

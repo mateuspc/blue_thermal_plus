@@ -36,9 +36,6 @@ class PrinterProfiles {
     ),
 
     // Classic não aplica no ESP32 (MFi)
-    classic: ClassicConfig(
-      preferredProtocol: null,
-      autoDisconnectMs: 3000,
-    ),
+    classic: ClassicConfig(preferredProtocol: null, autoDisconnectMs: 3000),
   );
 }

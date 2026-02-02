@@ -1,6 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
-
 import 'package:flutter/services.dart';
 
 import '../api/models.dart';
@@ -8,7 +6,9 @@ import '../api/printer_config.dart';
 import 'blue_thermal_plus_platform_interface.dart';
 
 class MethodChannelBlueThermalPlus extends BlueThermalPlusPlatform {
-  static const MethodChannel _method = MethodChannel('blue_thermal_plus/methods');
+  static const MethodChannel _method = MethodChannel(
+    'blue_thermal_plus/methods',
+  );
   static const EventChannel _events = EventChannel('blue_thermal_plus/events');
 
   Stream<PrinterEvent>? _cached;
@@ -49,8 +49,7 @@ class MethodChannelBlueThermalPlus extends BlueThermalPlusPlatform {
 
     final safe = list ?? const [];
     return safe.whereType<Map>().map((m) {
-      // garantindo Map<String, dynamic> mesmo se vier Map<dynamic,dynamic>
-      final mm = Map<String, dynamic>.from(m as Map);
+      final mm = Map<String, dynamic>.from(m);
       return PrinterDevice.fromMap(mm);
     }).toList();
   }
@@ -73,9 +72,9 @@ class MethodChannelBlueThermalPlus extends BlueThermalPlusPlatform {
 
   @override
   Future<void> printRawBytes(
-      Uint8List data, {
-        PrinterTransport transport = PrinterTransport.ble,
-      }) {
+    Uint8List data, {
+    PrinterTransport transport = PrinterTransport.ble,
+  }) {
     return _method.invokeMethod('printRawBytes', {
       'data': data,
       'transport': transport.name,
