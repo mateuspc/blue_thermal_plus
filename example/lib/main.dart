@@ -479,7 +479,6 @@ class AutoCtbTestPrinterStrategy implements IPrinterStrategy {
   }
 }
 
-
 // class AutoCtbTestPrinterStrategy implements IPrinterStrategy {
 //   @override
 //   Future<List<int>> generateBytes(dynamic data) async {
@@ -654,7 +653,10 @@ class _StatusCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text("Status", style: Theme.of(context).textTheme.titleMedium),
+                  Text(
+                    "Status",
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                   const SizedBox(height: 4),
                   Text(status),
                   const SizedBox(height: 8),
@@ -663,7 +665,9 @@ class _StatusCard extends StatelessWidget {
                     children: [
                       Chip(label: Text("transport: ${transport.name}")),
                       Chip(label: Text(scanning ? "scanning" : "idle")),
-                      Chip(label: Text(connected ? "connected" : "disconnected")),
+                      Chip(
+                        label: Text(connected ? "connected" : "disconnected"),
+                      ),
                       Chip(label: Text(ready ? "ready" : "not ready")),
                     ],
                   ),
@@ -704,21 +708,23 @@ class _DeviceList extends StatelessWidget {
             child: devices.isEmpty
                 ? const Center(child: Text("Nenhum device ainda"))
                 : ListView.builder(
-              itemCount: devices.length,
-              itemBuilder: (context, i) {
-                final d = devices[i];
-                final selected = d.id == selectedId;
+                    itemCount: devices.length,
+                    itemBuilder: (context, i) {
+                      final d = devices[i];
+                      final selected = d.id == selectedId;
 
-                return ListTile(
-                  selected: selected,
-                  leading: const Icon(Icons.bluetooth),
-                  title: Text(d.name),
-                  subtitle: Text(d.id),
-                  trailing: selected ? const Icon(Icons.check_circle) : null,
-                  onTap: () => onSelect(d),
-                );
-              },
-            ),
+                      return ListTile(
+                        selected: selected,
+                        leading: const Icon(Icons.bluetooth),
+                        title: Text(d.name),
+                        subtitle: Text(d.id),
+                        trailing: selected
+                            ? const Icon(Icons.check_circle)
+                            : null,
+                        onTap: () => onSelect(d),
+                      );
+                    },
+                  ),
           ),
         ],
       ),
@@ -747,18 +753,24 @@ class _LogPanel extends StatelessWidget {
             child: logs.isEmpty
                 ? const Center(child: Text("Sem logs ainda"))
                 : ListView.builder(
-              itemCount: logs.length,
-              itemBuilder: (context, i) {
-                final l = logs[i];
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  child: Text(
-                    l,
-                    style: const TextStyle(fontFamily: "monospace", fontSize: 12),
+                    itemCount: logs.length,
+                    itemBuilder: (context, i) {
+                      final l = logs[i];
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        child: Text(
+                          l,
+                          style: const TextStyle(
+                            fontFamily: "monospace",
+                            fontSize: 12,
+                          ),
+                        ),
+                      );
+                    },
                   ),
-                );
-              },
-            ),
           ),
         ],
       ),

@@ -23,7 +23,7 @@ scalability, and production-grade stability.
   Platform   BLE   Classic
   ---------- ----- ---------------
   Android    ✅    ✅
-  iOS        ✅    ⚠️ (BLE only)
+  iOS        ✅    ✅ (MFi)
 
 ## 🧠 Architecture
 
