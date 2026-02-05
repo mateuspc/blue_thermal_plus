@@ -1,12 +1,12 @@
 import 'dart:async';
-import 'dart:io'; // Import Platform
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:blue_thermal_plus/src/blue_thermal_plus.dart';
 import 'package:blue_thermal_plus/api/models.dart';
 import 'package:blue_thermal_plus/api/printer_config.dart';
-import 'package:permission_handler/permission_handler.dart'; // Import Permission Handler
+import 'package:permission_handler/permission_handler.dart';
 
 void main() => runApp(const MyApp());
 
@@ -54,6 +54,9 @@ class _PluginTestPageState extends State<PluginTestPage> {
   bool autoApplyOnScan = true;
   bool autoApplyOnConnect = true;
 
+  // ---------------- STRATEGY ----------------
+  final IPrinterStrategy bigStrategy = AutoCtbTestPrinterStrategy();
+
   @override
   void initState() {
     super.initState();
@@ -69,16 +72,11 @@ class _PluginTestPageState extends State<PluginTestPage> {
   // ---------------- HELPER: PERMISSIONS ----------------
   Future<bool> _checkPermissions() async {
     if (Platform.isAndroid) {
-      // For Android 12+ (API 31+)
-      // We need Scan and Connect. Location is technically not needed for BLE scan
-      // if you don't derive physical location, but often good to check.
       if (await Permission.bluetoothScan.request().isGranted &&
           await Permission.bluetoothConnect.request().isGranted) {
         return true;
       }
 
-      // For Android 11 or lower (API < 31)
-      // Location is REQUIRED to scan for Bluetooth devices
       if (await Permission.location.request().isGranted) {
         return true;
       }
@@ -86,8 +84,6 @@ class _PluginTestPageState extends State<PluginTestPage> {
       _log("❌ Permissões negadas. Verifique as configurações.");
       return false;
     }
-    // iOS usually handles permissions automatically via Info.plist usage descriptions,
-    // but you can explicit check bluetooth permission if needed.
     return true;
   }
 
@@ -134,7 +130,6 @@ class _PluginTestPageState extends State<PluginTestPage> {
 
   // ---------------- ACTIONS ----------------
   Future<void> _startScan() async {
-    // ✅ CHECK PERMISSIONS BEFORE SCANNING
     final hasPermission = await _checkPermissions();
     if (!hasPermission) return;
 
@@ -156,7 +151,6 @@ class _PluginTestPageState extends State<PluginTestPage> {
   }
 
   Future<void> _snapshot() async {
-    // Also good to check permission here for Android 11 location requirement
     final hasPermission = await _checkPermissions();
     if (!hasPermission) return;
 
@@ -177,7 +171,6 @@ class _PluginTestPageState extends State<PluginTestPage> {
       return;
     }
 
-    // Checking permission for Connect (Android 12)
     if (Platform.isAndroid) {
       if (!await Permission.bluetoothConnect.request().isGranted) {
         _log("❌ Permissão de conexão Bluetooth negada");
@@ -185,10 +178,9 @@ class _PluginTestPageState extends State<PluginTestPage> {
       }
     }
 
-    // ✅ 1) Define o profile aqui (antes de conectar)
     final profile = PrinterProfiles.zebra;
 
-    _log(">>> configure(profile=esp32)");
+    _log(">>> configure(profile=zebra)");
     await bt.configure(profile);
 
     _log(">>> connect(${d.id}, $transport)");
@@ -200,38 +192,29 @@ class _PluginTestPageState extends State<PluginTestPage> {
     await bt.disconnect(transport: transport);
   }
 
-  Future<void> _printTestCpcl() async {
+  Future<void> _printBigAutoCtb() async {
     if (!ready) {
       _log("⚠️ Ainda não está READY (aguarde 'ready')");
       return;
     }
 
-    final data = _cpclTestBytes();
-    _log(">>> printRawBytes(${data.length} bytes, $transport)");
+    // Aqui você pode passar um Map fake, se quiser parametrizar no futuro:
+    final fakeData = {
+      "ait": "CTB-2026-000123",
+      "placa": "ABC1D23",
+      "dataHora": "05/02/2026 10:32",
+    };
+
+    final bytesList = await bigStrategy.generateBytes(fakeData);
+    final data = Uint8List.fromList(bytesList);
+
+    _log(">>> printRawBytes(BIG ${data.length} bytes, $transport)");
     await bt.printRawBytes(data, transport: transport);
-  }
-
-  Uint8List _cpclTestBytes() {
-    final cpcl = <int>[];
-    void add(String s) => cpcl.addAll(s.codeUnits);
-
-    add("\r\n");
-    add("! 0 200 200 500 1\r\n");
-    add("PAGE-WIDTH 800\r\n");
-    add("JOURNAL\r\n");
-    add("T 5 0 30 30 FLUTTER TEST\r\n");
-    add("T 7 0 30 80 Transport: ${transport.name}\r\n");
-    add("LINE 30 160 750 160 3\r\n");
-    add("BARCODE 128 1 1 50 30 200 123456789\r\n");
-    add("PRINT\r\n");
-
-    return Uint8List.fromList(cpcl);
   }
 
   // ---------------- UI ----------------
   @override
   Widget build(BuildContext context) {
-    // ... (O restante da UI permanece idêntico) ...
     final list = devices.values.toList()
       ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
@@ -321,17 +304,17 @@ class _PluginTestPageState extends State<PluginTestPage> {
                   icon: const Icon(Icons.link_off),
                   label: const Text("Disconnect"),
                 ),
+
+                // ✅ NOVO BOTÃO: impressão grande
                 FilledButton.icon(
-                  onPressed: ready ? _printTestCpcl : null,
-                  icon: const Icon(Icons.print),
-                  label: const Text("Print CPCL"),
+                  onPressed: ready ? _printBigAutoCtb : null,
+                  icon: const Icon(Icons.receipt_long),
+                  label: const Text("Print BIG (Auto CTB)"),
                 ),
               ],
             ),
           ),
-
           const SizedBox(height: 8),
-
           Expanded(
             child: Row(
               children: [
@@ -356,7 +339,291 @@ class _PluginTestPageState extends State<PluginTestPage> {
   }
 }
 
-// ... (Widgets _StatusCard, _DeviceList e _LogPanel permanecem iguais)
+// ==================== STRATEGY (SEU CÓDIGO) ====================
+
+abstract class IPrinterStrategy {
+  Future<List<int>> generateBytes(dynamic data);
+}
+
+class AutoCtbTestPrinterStrategy implements IPrinterStrategy {
+  @override
+  Future<List<int>> generateBytes(dynamic data) async {
+    final cpcl = <int>[];
+    void add(String s) => cpcl.addAll(s.codeUnits);
+
+    // Começo "limpo"
+    add("\r\n");
+
+    add("\r\n");
+    add("! 0 200 200 4000 1\r\n");
+    add("PAGE-WIDTH 800\r\n");
+    add("JOURNAL\r\n");
+    add("T 5 0 30 30 TESTE DE IMPRESSAO 2\r\n");
+    // add("T 7 0 30 80 Modulo Clean Arch\r\n");
+    // add("T 7 0 30 120 Modulo Clean Arch\r\n");
+    int y = 80;
+
+    void row(String produto, String valor) {
+      add("T 7 0 30 $y $produto: $valor\r\n");
+      y += 30;
+    }
+
+    row("Arroz 5kg", "R\$ 28,90");
+    row("Feijão carioca 1kg", "R\$ 8,50");
+    row("Macarrão espaguete", "R\$ 4,20");
+    row("Óleo de soja 900ml", "R\$ 7,80");
+    row("Açúcar refinado 1kg", "R\$ 5,10");
+    row("Café torrado 500g", "R\$ 14,90");
+    row("Leite integral 1L", "R\$ 4,80");
+    row("Margarina 500g", "R\$ 6,40");
+    row("Farinha de trigo 1kg", "R\$ 4,60");
+    row("Biscoito recheado", "R\$ 3,90");
+    row("Molho de tomate", "R\$ 2,70");
+    row("Refrigerante 2L", "R\$ 8,99");
+    row("Suco de laranja 1L", "R\$ 6,50");
+    row("Queijo muçarela 300g", "R\$ 12,80");
+    row("Presunto fatiado", "R\$ 9,40");
+    row("Frango congelado kg", "R\$ 11,90");
+    row("Carne moída kg", "R\$ 24,90");
+    row("Ovos dúzia", "R\$ 9,20");
+    row("Pão de forma", "R\$ 7,30");
+    row("Manteiga 200g", "R\$ 8,60");
+    row("Iogurte natural", "R\$ 3,50");
+    row("Cereal matinal", "R\$ 13,40");
+    row("Achocolatado", "R\$ 6,90");
+    row("Sabão em pó", "R\$ 15,80");
+    row("Amaciante roupas", "R\$ 12,70");
+    row("Detergente líquido", "R\$ 2,30");
+    row("Papel higiênico 12un", "R\$ 18,90");
+    row("Shampoo", "R\$ 14,50");
+    row("Condicionador", "R\$ 15,20");
+    row("Creme dental", "R\$ 6,10");
+    row("Escova de dentes", "R\$ 5,90");
+    row("Sabonete", "R\$ 2,20");
+    row("Água mineral 1,5L", "R\$ 2,80");
+    row("Chocolate barra", "R\$ 7,50");
+    row("Sorvete 2L", "R\$ 19,90");
+    row("Pizza congelada", "R\$ 17,80");
+    row("Hambúrguer pacote", "R\$ 13,60");
+    row("Batata frita", "R\$ 9,90");
+    row("Milho verde lata", "R\$ 4,10");
+    row("Ervilha lata", "R\$ 4,00");
+    row("Atum lata", "R\$ 8,30");
+    row("Sardinha lata", "R\$ 6,70");
+    row("Maionese", "R\$ 7,20");
+    row("Ketchup", "R\$ 6,40");
+    row("Mostarda", "R\$ 5,80");
+    row("Tempero completo", "R\$ 4,90");
+    row("Sal refinado", "R\$ 2,10");
+    row("Pimenta molho", "R\$ 6,00");
+    row("Bala sortida", "R\$ 3,20");
+    row("Chiclete pacote", "R\$ 2,90");
+    row("Produto ULTIMO", "R\$ 20,00");
+    row("Arroz 5kg", "R\$ 28,90");
+    row("Feijão carioca 1kg", "R\$ 8,50");
+    row("Macarrão espaguete", "R\$ 4,20");
+    row("Óleo de soja 900ml", "R\$ 7,80");
+    row("Açúcar refinado 1kg", "R\$ 5,10");
+    row("Café torrado 500g", "R\$ 14,90");
+    row("Leite integral 1L", "R\$ 4,80");
+    row("Margarina 500g", "R\$ 6,40");
+    row("Farinha de trigo 1kg", "R\$ 4,60");
+    row("Biscoito recheado", "R\$ 3,90");
+    row("Molho de tomate", "R\$ 2,70");
+    row("Refrigerante 2L", "R\$ 8,99");
+    row("Suco de laranja 1L", "R\$ 6,50");
+    row("Queijo muçarela 300g", "R\$ 12,80");
+    row("Presunto fatiado", "R\$ 9,40");
+    row("Frango congelado kg", "R\$ 11,90");
+    row("Carne moída kg", "R\$ 24,90");
+    row("Ovos dúzia", "R\$ 9,20");
+    row("Pão de forma", "R\$ 7,30");
+    row("Manteiga 200g", "R\$ 8,60");
+    row("Iogurte natural", "R\$ 3,50");
+    row("Cereal matinal", "R\$ 13,40");
+    row("Achocolatado", "R\$ 6,90");
+    row("Sabão em pó", "R\$ 15,80");
+    row("Amaciante roupas", "R\$ 12,70");
+    row("Detergente líquido", "R\$ 2,30");
+    row("Papel higiênico 12un", "R\$ 18,90");
+    row("Shampoo", "R\$ 14,50");
+    row("Condicionador", "R\$ 15,20");
+    row("Creme dental", "R\$ 6,10");
+    row("Escova de dentes", "R\$ 5,90");
+    row("Sabonete", "R\$ 2,20");
+    row("Água mineral 1,5L", "R\$ 2,80");
+    row("Chocolate barra", "R\$ 7,50");
+    row("Sorvete 2L", "R\$ 19,90");
+    row("Pizza congelada", "R\$ 17,80");
+    row("Hambúrguer pacote", "R\$ 13,60");
+    row("Batata frita", "R\$ 9,90");
+    row("Milho verde lata", "R\$ 4,10");
+    row("Ervilha lata", "R\$ 4,00");
+    row("Atum lata", "R\$ 8,30");
+    row("Sardinha lata", "R\$ 6,70");
+    row("Maionese", "R\$ 7,20");
+    row("Ketchup", "R\$ 6,40");
+    row("Mostarda", "R\$ 5,80");
+    row("Tempero completo", "R\$ 4,90");
+    row("Sal refinado", "R\$ 2,10");
+    row("Pimenta molho", "R\$ 6,00");
+    row("Bala sortida", "R\$ 3,20");
+    row("Chiclete pacote", "R\$ 2,90");
+    row("Produto ULTIMO", "R\$ 20,00");
+
+    add("LINE 30 160 750 160 3\r\n");
+    add("BARCODE 128 1 1 50 30 400 123456789\r\n");
+    add("PRINT\r\n");
+
+    return cpcl;
+  }
+}
+
+
+// class AutoCtbTestPrinterStrategy implements IPrinterStrategy {
+//   @override
+//   Future<List<int>> generateBytes(dynamic data) async {
+//     final cpcl = <int>[];
+//     // Helper para converter string em bytes CPCL
+//     void add(String s) => cpcl.addAll(s.codeUnits);
+//
+//     // --- COMANDOS INICIAIS ---
+//     add("\r\n");
+//     add("! 0 200 200 4000 1\r\n");
+//     add("PAGE-WIDTH 800\r\n");
+//     add("JOURNAL\r\n"); // Modo Journal para impressão contínua
+//
+//     // --- FUNÇÃO AJUDANTE PARA TEXTO MULTILINHA (NO DART) ---
+//     // Isso substitui o comando MULTILINE que trava a impressora.
+//     // Retorna o novo Y após escrever as linhas.
+//     int printMultiline(String text, int x, int startY, int maxCharsPerLine) {
+//       int currentY = startY;
+//       List<String> words = text.split(' ');
+//       String currentLine = "";
+//
+//       for (var word in words) {
+//         if ((currentLine + word).length > maxCharsPerLine) {
+//           // Imprime a linha acumulada
+//           add("T 7 0 $x $currentY $currentLine\r\n");
+//           currentY += 30; // Avança 30px para baixo
+//           currentLine = "";
+//         }
+//         currentLine += "$word ";
+//       }
+//       // Imprime o que sobrou
+//       if (currentLine.isNotEmpty) {
+//         add("T 7 0 $x $currentY $currentLine\r\n");
+//         currentY += 30;
+//       }
+//       return currentY;
+//     }
+//
+//     // =================================================
+//     // HEADER
+//     // =================================================
+//     add("T 5 1 0 20 NOTIFICACAO DE AUTUACAO\r\n");
+//     add("T 7 0 0 60 AUTO CTB - TESTE\r\n");
+//     add("T 7 0 30 110 AIT: CTB-2026-000123\r\n");
+//     add("T 7 0 30 140 DATA/HORA: 05/02/2026 10:32\r\n");
+//     add("LINE 30 175 750 175 3\r\n");
+//
+//     // =================================================
+//     // VEICULO
+//     // =================================================
+//     add("T 5 0 30 195 VEICULO\r\n");
+//     add("T 7 0 30 230 PLACA: ABC1D23\r\n");
+//     add("T 7 0 30 260 MARCA/MODELO: FIAT ARGO\r\n");
+//     add("T 7 0 30 290 COR: BRANCO\r\n");
+//     add("T 7 0 30 320 ANO: 2022\r\n");
+//     add("LINE 30 350 750 350 3\r\n");
+//
+//     // =================================================
+//     // CONDUTOR
+//     // =================================================
+//     add("T 5 0 30 370 CONDUTOR\r\n");
+//     add("T 7 0 30 405 NOME: JOAO DA SILVA\r\n");
+//     add("T 7 0 30 435 CNH: 12345678900\r\n");
+//     add("LINE 30 465 750 465 3\r\n");
+//
+//     // =================================================
+//     // LOCAL
+//     // =================================================
+//     add("T 5 0 30 485 LOCAL\r\n");
+//     add("T 7 0 30 520 AV PAULISTA, 1000 - SP\r\n");
+//     add("T 7 0 30 550 SENTIDO: CENTRO -> JARDINS\r\n");
+//     add("LINE 30 580 750 580 3\r\n");
+//
+//     // =================================================
+//     // INFRACAO
+//     // =================================================
+//     add("T 5 0 30 600 INFRACAO\r\n");
+//     add("T 7 0 30 635 COD: 74550\r\n");
+//     add("T 7 0 30 665 ART: 181 XVIII\r\n");
+//     add("T 7 0 30 695 GRAV: MEDIA\r\n");
+//
+//     // SUBSTITUÍDO: MULTILINE nativo por lógica manual
+//     // Texto longo da infração
+//     String textoInfracao = "ESTACIONAR EM LOCAL PROIBIDO SINALIZADO";
+//     // Imprime e calcula onde a linha termina (baseado em max 40 caracteres por linha)
+//     int yAposInfracao = printMultiline(textoInfracao, 30, 725, 40);
+//
+//     // Ajustamos a linha abaixo baseada em onde o texto acabou
+//     // (Ou mantemos fixa se soubermos que não vai estourar)
+//     add("LINE 30 820 750 820 3\r\n");
+//
+//     // =================================================
+//     // MEDICOES
+//     // =================================================
+//     add("T 5 0 30 840 MEDICOES\r\n");
+//     add("T 7 0 30 875 VEL PERMITIDA: 60 KM/H\r\n");
+//     add("T 7 0 30 905 VEL AFERIDA: ---\r\n");
+//     add("LINE 30 935 750 935 3\r\n");
+//
+//     // =================================================
+//     // OBSERVACOES
+//     // =================================================
+//     add("T 5 0 30 955 OBSERVACOES\r\n");
+//
+//     // SUBSTITUÍDO: MULTILINE nativo por lógica manual
+//     String textoObs = "IMPRESSAO DE TESTE DO MODULO CLEAN ARCH";
+//     printMultiline(textoObs, 30, 985, 40);
+//
+//     add("LINE 30 1080 750 1080 3\r\n");
+//
+//     // =================================================
+//     // AGENTE
+//     // =================================================
+//     add("T 5 0 30 1100 AGENTE\r\n");
+//     add("T 7 0 30 1135 AGENTE MARIA PEREIRA\r\n");
+//     add("T 7 0 30 1165 MAT: 009988\r\n");
+//
+//     // =================================================
+//     // 2ª VIA - INFORMACOES AO USUARIO
+//     // =================================================
+//     add("LINE 30 1200 750 1200 3\r\n");
+//
+//     // Removi CENTER/LEFT para garantir estabilidade, usando coordenada X centralizada manualmente ou 0
+//     // CENTER as vezes conflita com coordenadas explícitas em alguns firmwares
+//     add("T 5 0 100 1220 2a VIA - INFORMACOES AO USUARIO\r\n");
+//
+//     String textoLegal = "DOCUMENTO DE TESTE. CONFIRA OS DADOS IMPRESSOS.";
+//     printMultiline(textoLegal, 30, 1260, 40);
+//
+//     // =================================================
+//     // BARCODE DE TESTE
+//     // =================================================
+//     // Aumentei um pouco o Y para garantir que não sobreponha o texto acima
+//     add("BARCODE 128 1 1 60 30 1350 CTB2026000123\r\n");
+//
+//     // Finaliza a impressão
+//     add("PRINT\r\n");
+//
+//     return cpcl;
+//   }
+// }
+
+// ==================== UI WIDGETS (IGUAIS) ====================
+
 class _StatusCard extends StatelessWidget {
   final String status;
   final bool scanning;
@@ -387,10 +654,7 @@ class _StatusCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    "Status",
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
+                  Text("Status", style: Theme.of(context).textTheme.titleMedium),
                   const SizedBox(height: 4),
                   Text(status),
                   const SizedBox(height: 8),
@@ -399,9 +663,7 @@ class _StatusCard extends StatelessWidget {
                     children: [
                       Chip(label: Text("transport: ${transport.name}")),
                       Chip(label: Text(scanning ? "scanning" : "idle")),
-                      Chip(
-                        label: Text(connected ? "connected" : "disconnected"),
-                      ),
+                      Chip(label: Text(connected ? "connected" : "disconnected")),
                       Chip(label: Text(ready ? "ready" : "not ready")),
                     ],
                   ),
@@ -442,23 +704,21 @@ class _DeviceList extends StatelessWidget {
             child: devices.isEmpty
                 ? const Center(child: Text("Nenhum device ainda"))
                 : ListView.builder(
-                    itemCount: devices.length,
-                    itemBuilder: (context, i) {
-                      final d = devices[i];
-                      final selected = d.id == selectedId;
+              itemCount: devices.length,
+              itemBuilder: (context, i) {
+                final d = devices[i];
+                final selected = d.id == selectedId;
 
-                      return ListTile(
-                        selected: selected,
-                        leading: const Icon(Icons.bluetooth),
-                        title: Text(d.name),
-                        subtitle: Text(d.id),
-                        trailing: selected
-                            ? const Icon(Icons.check_circle)
-                            : null,
-                        onTap: () => onSelect(d),
-                      );
-                    },
-                  ),
+                return ListTile(
+                  selected: selected,
+                  leading: const Icon(Icons.bluetooth),
+                  title: Text(d.name),
+                  subtitle: Text(d.id),
+                  trailing: selected ? const Icon(Icons.check_circle) : null,
+                  onTap: () => onSelect(d),
+                );
+              },
+            ),
           ),
         ],
       ),
@@ -487,24 +747,18 @@ class _LogPanel extends StatelessWidget {
             child: logs.isEmpty
                 ? const Center(child: Text("Sem logs ainda"))
                 : ListView.builder(
-                    itemCount: logs.length,
-                    itemBuilder: (context, i) {
-                      final l = logs[i];
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        child: Text(
-                          l,
-                          style: const TextStyle(
-                            fontFamily: "monospace",
-                            fontSize: 12,
-                          ),
-                        ),
-                      );
-                    },
+              itemCount: logs.length,
+              itemBuilder: (context, i) {
+                final l = logs[i];
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  child: Text(
+                    l,
+                    style: const TextStyle(fontFamily: "monospace", fontSize: 12),
                   ),
+                );
+              },
+            ),
           ),
         ],
       ),

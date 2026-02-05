@@ -2,7 +2,6 @@ package br.com.bluethermal.blue_thermal_plus.transports.classic
 
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
-import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothSocket
 import android.os.Handler
 import android.os.Looper
@@ -25,37 +24,43 @@ class ClassicTransport(
         get() = emitter.sink
         set(value) { emitter.sink = value }
 
-    // UUID Padrão para SPP (Serial Port Profile) - Universal para impressoras térmicas
+    // UUID Padrão para SPP (Serial Port Profile)
     private val SPP_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
 
     private var socket: BluetoothSocket? = null
     private var outputStream: OutputStream? = null
     private var inputStream: InputStream? = null
 
-    // Thread para leitura de dados (equivalente ao StreamDelegate do iOS)
+    // Thread para leitura
     private var readThread: Thread? = null
-    private var isReading = false
+    @Volatile private var isReading = false
 
-    // Configurações
-    private var autoDisconnectMs = 3000L
+    // Thread para impressão (evita prints concorrentes)
+    @Volatile private var isPrinting = false
+
+    // Configurações (defaults seguros p/ impressão grande)
+    private var autoDisconnectMs = 15000L   // ✅ maior por padrão
+    private var chunkSize = 512             // ✅ chunk no classic
+    private var chunkDelayMs = 10L          // ✅ pequeno delay para buffer
+
+    // handler/disconnect
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var disconnectRunnable: Runnable? = null
 
     // ✅ Configurações vindas do Flutter
-    // preferredProtocol é ignorado no Android (sempre usa SPP UUID),
-    // mas mantemos a assinatura para compatibilidade.
     fun applyConfig(config: Map<String, Any>?) {
         if (config == null) return
 
-        // preferredProtocol -> Ignorado no Android (Usa SPP)
         val preferredProtocol = config["preferredProtocol"] as? String
 
-        // autoDisconnectMs
-        (config["autoDisconnectMs"] as? Int)?.let {
-            this.autoDisconnectMs = it.toLong()
-        }
+        (config["autoDisconnectMs"] as? Int)?.let { this.autoDisconnectMs = it.toLong() }
+        (config["chunkSize"] as? Int)?.let { if (it > 0) this.chunkSize = it }
+        (config["chunkDelayMs"] as? Int)?.let { this.chunkDelayMs = it.toLong() }
 
         emitter.emit(
             type = "status",
-            message = "Classic: config aplicado protocol=${preferredProtocol ?: "SPP(Default)"} autoDiscMs=$autoDisconnectMs"
+            message = "Classic: config aplicado protocol=${preferredProtocol ?: "SPP(Default)"} " +
+                    "autoDiscMs=$autoDisconnectMs chunkSize=$chunkSize chunkDelayMs=$chunkDelayMs"
         )
     }
 
@@ -64,11 +69,10 @@ class ClassicTransport(
             emitter.emit("error", "Bluetooth não disponível")
             return
         }
-        store.clearClassic()
 
+        store.clearClassic()
         emitter.emit("scanStarted", "Classic: listando dispositivos pareados...")
 
-        // No Android Classic, listamos os dispositivos PAREADOS (Bonded)
         val bonded = adapter.bondedDevices
         if (!bonded.isNullOrEmpty()) {
             for (device in bonded) {
@@ -76,7 +80,6 @@ class ClassicTransport(
                 emitter.emit(
                     type = "deviceFound",
                     device = mapOf("id" to device.address, "name" to (device.name ?: "Sem Nome")),
-                    // Android não expõe protocolStrings nativamente como iOS
                     extra = mapOf("protocols" to emptyList<String>())
                 )
             }
@@ -86,20 +89,22 @@ class ClassicTransport(
     }
 
     override fun stopScan() {
-        // No Android, cancelar discovery economiza bateria, embora aqui estejamos listando pareados.
         if (adapter?.isDiscovering == true) {
-            adapter.cancelDiscovery()
+            try { adapter.cancelDiscovery() } catch (_: Exception) {}
         }
         emitter.emit("scanStopped", "Classic: stopScan (noop)")
     }
 
     override fun connect(deviceId: String) {
-        // ✅ evita trabalho/efeitos colaterais se ainda não estava conectado
+        // se já conectado, desconecta
         if (socket != null && socket!!.isConnected) {
             disconnect()
         }
 
-        val device = store.getClassic(deviceId) ?: adapter?.getRemoteDevice(deviceId)
+        val device = store.getClassic(deviceId) ?: try {
+            adapter?.getRemoteDevice(deviceId)
+        } catch (_: Exception) { null }
+
         if (device == null) {
             emitter.emit("error", "Classic: dispositivo não encontrado: $deviceId")
             return
@@ -109,85 +114,116 @@ class ClassicTransport(
             try {
                 emitter.emit("status", "Classic: criando socket SPP para ${device.name}...")
 
-                // Criação do Socket SPP
+                // ✅ Importante para RFCOMM: cancelDiscovery antes de conectar
+                try { adapter?.cancelDiscovery() } catch (_: Exception) {}
+
                 val tempSocket = device.createRfcommSocketToServiceRecord(SPP_UUID)
 
-                // Conecta (Bloqueante)
+                // Conecta (bloqueante)
                 tempSocket.connect()
 
                 socket = tempSocket
                 outputStream = tempSocket.outputStream
                 inputStream = tempSocket.inputStream
 
-                emitter.emit("connected", device = mapOf("id" to device.address, "name" to (device.name ?: "")))
+                // ✅ cancela qualquer auto-disconnect pendente
+                cancelAutoDisconnect()
 
-                // Como streams abrem imediatamente no Android, emitimos Ready
+                emitter.emit(
+                    "connected",
+                    device = mapOf("id" to device.address, "name" to (device.name ?: ""))
+                )
                 emitter.emit("ready", "Classic: Socket aberto e pronto")
 
-                // Inicia loop de leitura (Equivalente ao StreamDelegate hasBytesAvailable)
                 startReading()
-
             } catch (e: IOException) {
                 emitter.emit("error", "Classic: Erro de conexão: ${e.message}")
-                try { socket?.close() } catch (ignored: Exception) {}
+                safeClose()
+            } catch (e: Exception) {
+                emitter.emit("error", "Classic: Erro inesperado: ${e.message}")
+                safeClose()
             }
         }.start()
     }
 
     override fun disconnect() {
-        isReading = false // Para a thread de leitura
-        try {
-            outputStream?.close()
-            inputStream?.close()
-            socket?.close()
-        } catch (e: Exception) {
-            // Ignora erros no fechamento
-        }
-
-        outputStream = null
-        inputStream = null
-        socket = null
-
+        isReading = false
+        cancelAutoDisconnect()
+        safeClose()
         emitter.emit("disconnected", "Classic: desconectado")
     }
 
     override fun printRaw(data: ByteArray) {
-        if (outputStream == null) {
+        val out = outputStream
+        if (out == null) {
             emitter.emit("error", "Classic: não conectado")
             return
         }
 
+        // ✅ evita print concorrente
+        if (isPrinting) {
+            emitter.emit("status", "Classic: print ignorado (já existe impressão em andamento)")
+            return
+        }
+
+        isPrinting = true
+
         Thread {
             try {
-                emitter.emit("status", "Classic: enviando dados...")
-                outputStream?.write(data)
-                outputStream?.flush()
+                cancelAutoDisconnect()
 
-                emitter.emit("status", "📤 Classic: enviado ${data.size} bytes (auto-disconnect ${autoDisconnectMs}ms)")
+                emitter.emit(
+                    "status",
+                    "Classic: enviando dados... (${data.size} bytes, chunk=$chunkSize, delay=${chunkDelayMs}ms)"
+                )
 
-                // Auto disconnect
-                Handler(Looper.getMainLooper()).postDelayed({
-                    disconnect()
-                }, autoDisconnectMs)
+                var offset = 0
+                while (offset < data.size) {
+                    val end = minOf(offset + chunkSize, data.size)
+                    out.write(data, offset, end - offset)
+                    out.flush()
+                    offset = end
+
+                    if (chunkDelayMs > 0) Thread.sleep(chunkDelayMs)
+                }
+
+                emitter.emit("status", "📤 Classic: enviado ${data.size} bytes")
+
+                // ✅ Auto-disconnect: só se > 0 (0 = não desconecta)
+                if (autoDisconnectMs > 0) {
+                    scheduleAutoDisconnect()
+                    emitter.emit("status", "Classic: aguardando ${autoDisconnectMs}ms para auto-disconnect")
+                } else {
+                    emitter.emit("status", "Classic: autoDisconnect desativado (autoDisconnectMs=0)")
+                }
 
             } catch (e: IOException) {
                 emitter.emit("error", "Classic: erro de escrita: ${e.message}")
                 disconnect()
+            } catch (e: Exception) {
+                emitter.emit("error", "Classic: erro inesperado na escrita: ${e.message}")
+                disconnect()
+            } finally {
+                isPrinting = false
             }
         }.start()
     }
 
-    // MARK: - Leitura (Simulando StreamDelegate)
+    // MARK: - Leitura
     private fun startReading() {
         isReading = true
         val stream = inputStream ?: return
 
-        // Thread dedicada para ler respostas da impressora
         readThread = Thread {
             val buffer = ByteArray(1024)
             while (isReading) {
                 try {
-                    if (stream.available() > 0) {
+                    val available = try {
+                        stream.available()
+                    } catch (_: Exception) {
+                        0
+                    }
+                    if (available > 0) {
                         val bytesRead = stream.read(buffer)
                         if (bytesRead > 0) {
                             val readData = buffer.copyOf(bytesRead)
@@ -195,15 +231,16 @@ class ClassicTransport(
                                 .replace("\r", "")
                                 .replace("\n", "")
 
-                            // Se for texto legível, loga o texto, senão avisa que é binário
                             if (text.isNotEmpty() && text.all { !it.isISOControl() || it.isWhitespace() }) {
                                 emitter.emit("status", "📥 Classic: recv [$text]")
                             } else {
-                                emitter.emit("status", "📥 Classic: recv (binário)")
+                                emitter.emit(
+                                    "status",
+                                    "📥 Classic: recv (binário ${bytesRead} bytes)"
+                                )
                             }
                         }
                     } else {
-                        // Evita loop infinito com 100% de CPU se não tiver dados
                         Thread.sleep(100)
                     }
                 } catch (e: IOException) {
@@ -212,9 +249,33 @@ class ClassicTransport(
                         disconnect()
                     }
                     break
+                } catch (_: Exception) {
+                    // evita crash por qualquer bug de stream
+                    Thread.sleep(100)
                 }
             }
         }
         readThread?.start()
+    }
+
+    private fun scheduleAutoDisconnect() {
+        cancelAutoDisconnect()
+        disconnectRunnable = Runnable { disconnect() }
+        mainHandler.postDelayed(disconnectRunnable!!, autoDisconnectMs)
+    }
+
+    private fun cancelAutoDisconnect() {
+        disconnectRunnable?.let { mainHandler.removeCallbacks(it) }
+        disconnectRunnable = null
+    }
+
+    private fun safeClose() {
+        try { outputStream?.close() } catch (_: Exception) {}
+        try { inputStream?.close() } catch (_: Exception) {}
+        try { socket?.close() } catch (_: Exception) {}
+
+        outputStream = null
+        inputStream = null
+        socket = null
     }
 }

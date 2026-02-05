@@ -19,7 +19,7 @@ class BleConfig {
     this.writeCharacteristicUuid,
     this.chunkSize = 100,
     this.chunkDelayMs = 10,
-    this.autoDisconnectMs = 3000,
+    this.autoDisconnectMs = 20000,
   });
 
   Map<String, dynamic> toMap() => {
@@ -36,9 +36,9 @@ class ClassicConfig {
   /// Se null -> usa o primeiro protocolo disponível do accessory.
   final String? preferredProtocol;
 
-  final int autoDisconnectMs; // default: 3000
+  final int autoDisconnectMs; // default: 20000
 
-  const ClassicConfig({this.preferredProtocol, this.autoDisconnectMs = 3000});
+  const ClassicConfig({this.preferredProtocol, this.autoDisconnectMs = 20000});
 
   Map<String, dynamic> toMap() => {
     "preferredProtocol": preferredProtocol,

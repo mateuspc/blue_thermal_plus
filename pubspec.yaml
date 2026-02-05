@@ -1,6 +1,6 @@
 name: blue_thermal_plus
 description: "Plugin para da suporte a impressão android e IOS em impressoras termicas"
-version: 0.0.2
+version: 0.0.4
 homepage: "https://bluethermalplus.web.app/"
 repository: "https://github.com/mateuspc/blue_thermal_plus"
 issue_tracker: "https://github.com/mateuspc/blue_thermal_plus/issues"

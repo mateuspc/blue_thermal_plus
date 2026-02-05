@@ -9,11 +9,11 @@ class PrinterProfiles {
       writeCharacteristicUuid: "38EB4A82-C570-11E3-9507-0002A5D5C51B",
       chunkSize: 20,
       chunkDelayMs: 10,
-      autoDisconnectMs: 3000,
+      autoDisconnectMs: 20000,
     ),
     classic: ClassicConfig(
       preferredProtocol: "com.zebra.rawport",
-      autoDisconnectMs: 3000,
+      autoDisconnectMs: 20000,
     ),
   );
 
