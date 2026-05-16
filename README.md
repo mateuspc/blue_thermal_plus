@@ -21,10 +21,10 @@ scalability, and production-grade stability.
 
 ## 📱 Supported Platforms
 
-  Platform   BLE   Classic   Epson ePOS
-  ---------- ----- --------- -----------
-  Android    ✅    ✅        ❌
-  iOS        ✅    ✅ (MFi)  ✅
+| Platform | BLE | Classic | Epson ePOS |
+| --- | --- | --- | --- |
+| Android | ✅ | ✅ | ❌ |
+| iOS | ✅ | ✅ (MFi) | ✅ |
 
 ## 🧠 Architecture
 
@@ -35,7 +35,13 @@ ClassicTransport / EpsonEposTransport)
 
 ``` yaml
 dependencies:
-  blue_thermal_plus: ^0.1.0
+  blue_thermal_plus: ^0.1.1
+```
+
+Then run:
+
+``` sh
+flutter pub get
 ```
 
 ## 📡 Basic Usage
@@ -78,16 +84,29 @@ await printer.connect(
 await printer.printRawBytes(bytes, transport: PrinterTransport.epson);
 ```
 
-The Epson SDK binary is not bundled in this package. Download Epson ePOS SDK for
-iOS from Epson and copy `libepos2.xcframework` to:
+The Epson SDK binary is not bundled or published with this package. Download
+Epson ePOS SDK for iOS from Epson and copy `libepos2.xcframework` to the
+consuming app:
 
 ``` text
-ios/Frameworks/libepos2.xcframework
+your_app/ios/Frameworks/libepos2.xcframework
 ```
 
-Then run `pod install` in the iOS app. The SDK is intentionally ignored by git
-and should be supplied by the consuming app/release environment. If the printer uses Bluetooth Classic
-MFi, add Epson's external accessory protocol in the app `Info.plist`:
+If you are developing this plugin locally, you can also place it in:
+
+``` text
+blue_thermal_plus/ios/Frameworks/libepos2.xcframework
+```
+
+Then run `pod install` in the iOS app:
+
+``` sh
+cd ios
+pod install
+```
+
+If the printer uses Bluetooth Classic MFi, add Epson's external accessory
+protocol in the app `Info.plist`:
 
 ``` xml
 <key>UISupportedExternalAccessoryProtocols</key>
@@ -99,6 +118,17 @@ MFi, add Epson's external accessory protocol in the app `Info.plist`:
 Keep `com.zebra.rawport` in the same array if your app also supports Zebra.
 For BLE Epson discovery, use `EpsonPortType.bluetoothLe`; for mixed discovery,
 the default profile uses `EpsonPortType.all`.
+
+For TCP discovery/printing on iOS, your app may also need the local network
+privacy keys used by iOS 14+:
+
+``` xml
+<key>NSLocalNetworkUsageDescription</key>
+<string>This app uses the local network to discover and connect to printers.</string>
+```
+
+If the Epson SDK is missing, `PrinterTransport.epson` remains available but
+emits an `error` event explaining that `libepos2.xcframework` was not found.
 
 ## 📢 Events
 

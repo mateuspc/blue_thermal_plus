@@ -1,6 +1,6 @@
 name: blue_thermal_plus
 description: "Flutter plugin for thermal printer discovery and raw printing over BLE, Bluetooth Classic, and Epson ePOS on iOS."
-version: 0.1.0
+version: 0.1.1
 homepage: "https://bluethermalplus.web.app/"
 repository: "https://github.com/mateuspc/blue_thermal_plus"
 issue_tracker: "https://github.com/mateuspc/blue_thermal_plus/issues"

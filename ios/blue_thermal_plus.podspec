@@ -4,7 +4,7 @@
 #
 Pod::Spec.new do |s|
   s.name             = 'blue_thermal_plus'
-  s.version          = '0.1.0'
+  s.version          = '0.1.1'
   s.summary          = 'Flutter thermal printer plugin for BLE, Classic and Epson ePOS.'
   s.description      = <<-DESC
 Flutter thermal printer plugin with Android and iOS transports for BLE,
@@ -18,10 +18,16 @@ Bluetooth Classic and optional Epson ePOS SDK support on iOS.
   s.dependency 'Flutter'
   s.platform = :ios, '13.0'
 
-  epson_epos_path = File.join(__dir__, 'Frameworks', 'libepos2.xcframework')
-  if File.exist?(epson_epos_path)
-    s.vendored_frameworks = 'Frameworks/libepos2.xcframework'
-    s.preserve_paths = 'Frameworks/libepos2.xcframework'
+  epson_epos_plugin_path = File.join(__dir__, 'Frameworks', 'libepos2.xcframework')
+  epson_epos_app_path = nil
+  if defined?(Pod::Config)
+    epson_epos_app_path = File.join(Pod::Config.instance.installation_root.to_s, 'Frameworks', 'libepos2.xcframework')
+  end
+  epson_epos_path = [epson_epos_app_path, epson_epos_plugin_path].compact.find { |path| File.exist?(path) }
+
+  if epson_epos_path
+    s.vendored_frameworks = epson_epos_path
+    s.preserve_paths = epson_epos_path
     s.frameworks = 'CoreBluetooth', 'ExternalAccessory'
     s.libraries = 'xml2'
     s.xcconfig = {
