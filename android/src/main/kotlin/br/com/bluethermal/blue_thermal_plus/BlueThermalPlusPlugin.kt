@@ -10,6 +10,7 @@ import br.com.bluethermal.blue_thermal_plus.core.TransportRouter
 import br.com.bluethermal.blue_thermal_plus.shared.DeviceStore
 import br.com.bluethermal.blue_thermal_plus.transports.ble.BleTransport
 import br.com.bluethermal.blue_thermal_plus.transports.classic.ClassicTransport
+import br.com.bluethermal.blue_thermal_plus.transports.unsupported.UnsupportedTransport
 
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.plugin.common.EventChannel
@@ -36,12 +37,17 @@ class BlueThermalPlusPlugin : FlutterPlugin, MethodCallHandler, EventChannel.Str
         ClassicTransport(manager.adapter, store)
     }
 
+    private val epsonTransport by lazy {
+        UnsupportedTransport("Epson ePOS SDK está implementado somente no iOS neste plugin.")
+    }
+
     private val router by lazy {
-        TransportRouter(bleTransport, classicTransport)
+        TransportRouter(bleTransport, classicTransport, epsonTransport)
     }
 
     private var globalBleConfig: Map<String, Any>? = null
     private var globalClassicConfig: Map<String, Any>? = null
+    private var globalEpsonConfig: Map<String, Any>? = null
 
     override fun onAttachedToEngine(@NonNull flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
         context = flutterPluginBinding.applicationContext
@@ -60,11 +66,13 @@ class BlueThermalPlusPlugin : FlutterPlugin, MethodCallHandler, EventChannel.Str
         val sink: (Map<String, Any>) -> Unit = { payload -> events?.success(payload) }
         bleTransport.onEvent = sink
         classicTransport.onEvent = sink
+        epsonTransport.onEvent = sink
     }
 
     override fun onCancel(arguments: Any?) {
         bleTransport.onEvent = null
         classicTransport.onEvent = null
+        epsonTransport.onEvent = null
     }
 
     override fun onMethodCall(@NonNull call: MethodCall, @NonNull result: Result) {
@@ -75,8 +83,9 @@ class BlueThermalPlusPlugin : FlutterPlugin, MethodCallHandler, EventChannel.Str
         // então o erro de Type Mismatch vai sumir.
         val manager = router.manager(transportStr)
 
-        // Mantemos essa flag para a lógica de config
+        // Mantemos essas flags para a lógica de config
         val isBle = (transportStr == "ble" || transportStr == null)
+        val isClassic = transportStr == "classic"
 
         when (call.method) {
             "configure" -> {
@@ -89,6 +98,10 @@ class BlueThermalPlusPlugin : FlutterPlugin, MethodCallHandler, EventChannel.Str
                 if (c != null) {
                     globalClassicConfig = c
                     classicTransport.applyConfig(c)
+                }
+                val e = args["epson"] as? Map<String, Any>
+                if (e != null) {
+                    globalEpsonConfig = e
                 }
                 result.success(null)
             }
@@ -110,7 +123,7 @@ class BlueThermalPlusPlugin : FlutterPlugin, MethodCallHandler, EventChannel.Str
                 // Lógica de aplicar config antes de conectar
                 if (isBle) {
                     bleTransport.applyConfig(globalBleConfig)
-                } else {
+                } else if (isClassic) {
                     classicTransport.applyConfig(globalClassicConfig)
                 }
 
@@ -118,9 +131,12 @@ class BlueThermalPlusPlugin : FlutterPlugin, MethodCallHandler, EventChannel.Str
                 if (isBle) {
                     val b = args["ble"] as? Map<String, Any>
                     if (b != null) bleTransport.applyConfig(b)
-                } else {
+                } else if (isClassic) {
                     val c = args["classic"] as? Map<String, Any>
                     if (c != null) classicTransport.applyConfig(c)
+                } else {
+                    val e = args["epson"] as? Map<String, Any>
+                    if (e != null) globalEpsonConfig = e
                 }
 
                 manager.connect(deviceId)

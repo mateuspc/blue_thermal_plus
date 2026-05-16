@@ -38,4 +38,19 @@ class PrinterProfiles {
     // Classic não aplica no ESP32 (MFi)
     classic: ClassicConfig(preferredProtocol: null, autoDisconnectMs: 3000),
   );
+
+  static const epsonTmP80II = PrinterConfig(
+    epson: EpsonConfig(
+      portType: EpsonPortType.all,
+      printerSeries: EpsonPrinterSeries.tmP80ii,
+      modelLang: "ank",
+      connectTimeoutMs: 10000,
+      sendTimeoutMs: 10000,
+      autoDisconnectMs: 20000,
+    ),
+    classic: ClassicConfig(
+      preferredProtocol: "com.epson.escpos",
+      autoDisconnectMs: 20000,
+    ),
+  );
 }

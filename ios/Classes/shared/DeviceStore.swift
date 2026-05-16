@@ -63,6 +63,8 @@ final class DeviceStore {
       return snapshotBle()
     case .classic:
       return snapshotClassic()
+    case .epson:
+      return []
     }
   }
 }

@@ -8,7 +8,7 @@ export '../api/printer_config.dart';
 class BlueThermalPlus {
   Stream<PrinterEvent> get events => BlueThermalPlusPlatform.instance.events;
 
-  /// ✅ Configura o plugin (BLE/Classic) antes de conectar/printar.
+  /// ✅ Configura o plugin (BLE/Classic/Epson) antes de conectar/printar.
   /// Pode chamar 1x no início do app, ou sempre que trocar de impressora/perfil.
   Future<void> configure(PrinterConfig config) {
     return BlueThermalPlusPlatform.instance.configure(config);

@@ -1,4 +1,4 @@
-enum PrinterTransport { ble, classic }
+enum PrinterTransport { ble, classic, epson }
 
 class PrinterDevice {
   final String id;

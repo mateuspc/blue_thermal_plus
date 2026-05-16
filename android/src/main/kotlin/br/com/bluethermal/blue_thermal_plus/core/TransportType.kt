@@ -4,7 +4,8 @@ import java.util.Locale
 
 enum class TransportType {
     BLE,
-    CLASSIC;
+    CLASSIC,
+    EPSON;
 
     companion object {
         // Converte a String do Flutter ("ble", "classic") para o Enum.
@@ -14,6 +15,7 @@ enum class TransportType {
 
             return when (value.lowercase(Locale.US)) {
                 "classic" -> CLASSIC
+                "epson" -> EPSON
                 "ble" -> BLE
                 else -> BLE // Fallback seguro
             }

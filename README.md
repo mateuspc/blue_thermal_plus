@@ -16,45 +16,89 @@ scalability, and production-grade stability.
 -   Auto-disconnect after print\
 -   Real-time device discovery events\
 -   Unified transport interface\
+-   Epson ePOS SDK transport on iOS (optional SDK install)\
 -   Production tested
 
 ## 📱 Supported Platforms
 
-  Platform   BLE   Classic
-  ---------- ----- ---------------
-  Android    ✅    ✅
-  iOS        ✅    ✅ (MFi)
+  Platform   BLE   Classic   Epson ePOS
+  ---------- ----- --------- -----------
+  Android    ✅    ✅        ❌
+  iOS        ✅    ✅ (MFi)  ✅
 
 ## 🧠 Architecture
 
 Flutter → TransportRouter → PrinterTransportManager → (BleTransport /
-ClassicTransport)
+ClassicTransport / EpsonEposTransport)
 
 ## 🚀 Installation
 
 ``` yaml
 dependencies:
-  blue_thermal_plus: ^1.0.0
+  blue_thermal_plus: ^0.1.0
 ```
 
 ## 📡 Basic Usage
 
 ``` dart
+import 'package:blue_thermal_plus/blue_thermal_plus.dart';
+
 final printer = BlueThermalPlus();
-printer.startScan();
-printer.connect(deviceId);
-printer.printRaw(bytes);
+await printer.startScan();
+await printer.connect(deviceId: deviceId);
+await printer.printRawBytes(bytes);
 ```
 
 ## ⚙️ BLE Config Example
 
 ``` dart
-printer.configure({
-  "chunkSize": 200,
-  "chunkDelayMs": 10,
-  "autoDisconnectMs": 3000
-});
+await printer.configure(const PrinterConfig(
+  ble: BleConfig(
+    chunkSize: 200,
+    chunkDelayMs: 10,
+    autoDisconnectMs: 3000,
+  ),
+));
 ```
+
+## 🧾 Epson TM-P80II on iOS
+
+Epson printers such as `TM-P80II_001379` should use the iOS Epson ePOS SDK
+transport instead of the Zebra BLE UUID transport:
+
+``` dart
+final printer = BlueThermalPlus();
+
+await printer.configure(PrinterProfiles.epsonTmP80II);
+await printer.startScan(transport: PrinterTransport.epson);
+await printer.connect(
+  deviceId: device.id,
+  transport: PrinterTransport.epson,
+);
+await printer.printRawBytes(bytes, transport: PrinterTransport.epson);
+```
+
+The Epson SDK binary is not bundled in this package. Download Epson ePOS SDK for
+iOS from Epson and copy `libepos2.xcframework` to:
+
+``` text
+ios/Frameworks/libepos2.xcframework
+```
+
+Then run `pod install` in the iOS app. The SDK is intentionally ignored by git
+and should be supplied by the consuming app/release environment. If the printer uses Bluetooth Classic
+MFi, add Epson's external accessory protocol in the app `Info.plist`:
+
+``` xml
+<key>UISupportedExternalAccessoryProtocols</key>
+<array>
+  <string>com.epson.escpos</string>
+</array>
+```
+
+Keep `com.zebra.rawport` in the same array if your app also supports Zebra.
+For BLE Epson discovery, use `EpsonPortType.bluetoothLe`; for mixed discovery,
+the default profile uses `EpsonPortType.all`.
 
 ## 📢 Events
 

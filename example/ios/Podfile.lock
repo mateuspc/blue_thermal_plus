@@ -1,5 +1,5 @@
 PODS:
-  - blue_thermal_plus (0.0.1):
+  - blue_thermal_plus (0.1.0):
     - Flutter
   - Flutter (1.0.0)
   - integration_test (0.0.1):
@@ -24,7 +24,7 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/permission_handler_apple/ios"
 
 SPEC CHECKSUMS:
-  blue_thermal_plus: 10b7ecb4032aa45b4bb0fc9acd6432087ea6ab6d
+  blue_thermal_plus: 4afea05f3635e34cc6c0cd616e4a08b6d3ab53b2
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
   integration_test: 4a889634ef21a45d28d50d622cf412dc6d9f586e
   permission_handler_apple: 4ed2196e43d0651e8ff7ca3483a069d469701f2d

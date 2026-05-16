@@ -10,6 +10,13 @@ final class EventEmitter {
     if let extra {
       for (k, v) in extra { payload[k] = v }
     }
-    sink?(payload)
+
+    if Thread.isMainThread {
+      sink?(payload)
+    } else {
+      DispatchQueue.main.async { [weak self] in
+        self?.sink?(payload)
+      }
+    }
   }
 }

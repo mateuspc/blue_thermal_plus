@@ -1,6 +1,6 @@
 name: blue_thermal_plus
-description: "Plugin para da suporte a impressão android e IOS em impressoras termicas"
-version: 0.0.4
+description: "Flutter plugin for thermal printer discovery and raw printing over BLE, Bluetooth Classic, and Epson ePOS on iOS."
+version: 0.1.0
 homepage: "https://bluethermalplus.web.app/"
 repository: "https://github.com/mateuspc/blue_thermal_plus"
 issue_tracker: "https://github.com/mateuspc/blue_thermal_plus/issues"
@@ -13,7 +13,7 @@ dependencies:
   flutter:
     sdk: flutter
   plugin_platform_interface: ^2.0.2
-  permission_handler:
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

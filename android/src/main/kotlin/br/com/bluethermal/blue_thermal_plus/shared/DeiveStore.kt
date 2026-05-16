@@ -67,11 +67,10 @@ class DeviceStore {
 
     // Helper para o Plugin decidir qual lista retornar
     fun snapshot(transport: String): List<Map<String, Any>> {
-        return if (transport == "classic") {
-            snapshotClassic()
-        } else {
-            // Default é BLE
-            snapshotBle()
+        return when (transport) {
+            "classic" -> snapshotClassic()
+            "epson" -> emptyList()
+            else -> snapshotBle()
         }
     }
 }

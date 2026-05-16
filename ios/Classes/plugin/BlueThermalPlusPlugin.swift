@@ -7,9 +7,11 @@ public final class BlueThermalPlusPlugin: NSObject, FlutterPlugin, FlutterStream
   private let store = DeviceStore()
   private lazy var ble = ZebraBLETransport(store: store)
   private lazy var classic = EAClassicTransport(store: store)
-  private lazy var router = TransportRouter(ble: ble, classic: classic)
+  private lazy var epson = EpsonEposTransport()
+  private lazy var router = TransportRouter(ble: ble, classic: classic, epson: epson)
   private var bleConfig: [String: Any] = [:]
   private var classicConfig: [String: Any] = [:]
+  private var epsonConfig: [String: Any] = [:]
 
   public static func register(with registrar: FlutterPluginRegistrar) {
     let instance = BlueThermalPlusPlugin()
@@ -33,6 +35,7 @@ public final class BlueThermalPlusPlugin: NSObject, FlutterPlugin, FlutterStream
     // Redireciona eventos dos transportes para o Flutter
     ble.onEvent = { [weak self] payload in self?.eventSink?(payload) }
     classic.onEvent = { [weak self] payload in self?.eventSink?(payload) }
+    epson.onEvent = { [weak self] payload in self?.eventSink?(payload) }
     return nil
   }
 
@@ -40,6 +43,7 @@ public final class BlueThermalPlusPlugin: NSObject, FlutterPlugin, FlutterStream
     eventSink = nil
     ble.onEvent = nil
     classic.onEvent = nil
+    epson.onEvent = nil
     return nil
   }
 
@@ -64,6 +68,10 @@ public final class BlueThermalPlusPlugin: NSObject, FlutterPlugin, FlutterStream
         classicConfig = c
         applyClassicConfigFrom(c)
       }
+      if let e = args["epson"] as? [String: Any] {
+        epsonConfig = e
+        applyEpsonConfigFrom(e)
+      }
       result(nil)
 
     case "startScan":
@@ -85,8 +93,10 @@ public final class BlueThermalPlusPlugin: NSObject, FlutterPlugin, FlutterStream
       // Isso garante que UUIDs do ESP32 sejam carregados antes de conectar.
       if transport == .ble {
         applyBleConfigFrom(bleConfig)
-      } else {
+      } else if transport == .classic {
         applyClassicConfigFrom(classicConfig)
+      } else {
+        applyEpsonConfigFrom(epsonConfig)
       }
 
       // 2. Verifica se existe override específico nesta chamada (opcional)
@@ -97,9 +107,13 @@ public final class BlueThermalPlusPlugin: NSObject, FlutterPlugin, FlutterStream
         }
         // FIX: Removemos o 'else { applyBleConfigFrom(args) }'
         // Isso impedia que argumentos vazios resetassem o driver para Zebra.
-      } else {
+      } else if transport == .classic {
         if let c = args["classic"] as? [String: Any] {
           applyClassicConfigFrom(c)
+        }
+      } else {
+        if let e = args["epson"] as? [String: Any] {
+          applyEpsonConfigFrom(e)
         }
       }
 
@@ -119,7 +133,11 @@ public final class BlueThermalPlusPlugin: NSObject, FlutterPlugin, FlutterStream
       result(nil)
 
     case "getDiscoveredDevices":
-      result(store.snapshot(for: transport))
+      if transport == .epson {
+        result(epson.snapshot())
+      } else {
+        result(store.snapshot(for: transport))
+      }
 
     default:
       result(FlutterMethodNotImplemented)
@@ -156,6 +174,25 @@ public final class BlueThermalPlusPlugin: NSObject, FlutterPlugin, FlutterStream
 
     classic.applyClassicConfig(
         preferredProtocol: preferredProtocol,
+        autoDisconnectMs: autoDisconnectMs
+    )
+  }
+
+  // MARK: - Helpers: Apply Epson ePOS Config
+  private func applyEpsonConfigFrom(_ args: [String: Any]) {
+    let portType = args["portType"] as? String
+    let printerSeries = args["printerSeries"] as? String
+    let modelLang = args["modelLang"] as? String
+    let connectTimeoutMs = args["connectTimeoutMs"] as? Int
+    let sendTimeoutMs = args["sendTimeoutMs"] as? Int
+    let autoDisconnectMs = args["autoDisconnectMs"] as? Int
+
+    epson.applyEpsonConfig(
+        portType: portType,
+        printerSeries: printerSeries,
+        modelLang: modelLang,
+        connectTimeoutMs: connectTimeoutMs,
+        sendTimeoutMs: sendTimeoutMs,
         autoDisconnectMs: autoDisconnectMs
     )
   }

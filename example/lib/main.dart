@@ -1,11 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
-import 'package:blue_thermal_plus/src/blue_thermal_plus.dart';
-import 'package:blue_thermal_plus/api/models.dart';
-import 'package:blue_thermal_plus/api/printer_config.dart';
+import 'package:blue_thermal_plus/blue_thermal_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 void main() => runApp(const MyApp());
@@ -158,7 +155,9 @@ class _PluginTestPageState extends State<PluginTestPage> {
     final list = await bt.getDiscoveredDevices(transport: transport);
 
     setState(() {
-      for (final d in list) devices[d.id] = d;
+      for (final d in list) {
+        devices[d.id] = d;
+      }
     });
 
     _log("Snapshot: ${list.length} devices");
@@ -178,9 +177,13 @@ class _PluginTestPageState extends State<PluginTestPage> {
       }
     }
 
-    final profile = PrinterProfiles.zebra;
+    final profile = transport == PrinterTransport.epson
+        ? PrinterProfiles.epsonTmP80II
+        : PrinterProfiles.zebra;
 
-    _log(">>> configure(profile=zebra)");
+    _log(
+      ">>> configure(profile=${transport == PrinterTransport.epson ? "epsonTmP80II" : "zebra"})",
+    );
     await bt.configure(profile);
 
     _log(">>> connect(${d.id}, $transport)");
@@ -239,6 +242,10 @@ class _PluginTestPageState extends State<PluginTestPage> {
                       DropdownMenuItem(
                         value: PrinterTransport.classic,
                         child: Text("Classic"),
+                      ),
+                      DropdownMenuItem(
+                        value: PrinterTransport.epson,
+                        child: Text("Epson ePOS"),
                       ),
                     ],
                     onChanged: (v) {
