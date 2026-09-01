@@ -1,3 +1,22 @@
+## 0.1.2
+
+### Added
+- Added optional Honeywell PrinterSDK routing for iOS RP2f/RP4f accessories using `com.honeywell.print`.
+- Kept the public Dart API unchanged by selecting the Honeywell SDK automatically inside the Classic transport.
+- Added a direct ExternalAccessory fallback when the proprietary Honeywell SDK is not installed.
+- Excluded `HoneywellPrinterSDK.xcframework` from Git and pub package publication.
+
+## 0.1.1
+
+### Fixed
+- Updated iOS podspec to detect Epson's `libepos2.xcframework` from the consuming app at `ios/Frameworks/libepos2.xcframework`.
+- Kept local plugin checkout support for `ios/Frameworks/libepos2.xcframework`.
+- Explicitly excludes Epson's binary SDK from the published package.
+
+### Updated
+- Documented the recommended app-level Epson SDK install path for published package consumers.
+- Documented the extra iOS local network privacy key needed for TCP printer discovery/printing.
+
 ## 0.1.0
 
 ### Added
