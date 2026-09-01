@@ -1,3 +1,8 @@
+## 0.1.3
+
+### Added
+- Added the explicit `PrinterProfiles.honeywellRp4f` profile for the Honeywell RP4f ExternalAccessory protocol.
+
 ## 0.1.2
 
 ### Added
