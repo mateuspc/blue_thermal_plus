@@ -36,7 +36,7 @@ ClassicTransport / HoneywellPrinterSDK bridge / EpsonEposTransport)
 
 ``` yaml
 dependencies:
-  blue_thermal_plus: ^0.1.2
+  blue_thermal_plus: ^0.1.3
 ```
 
 Then run:
@@ -137,6 +137,20 @@ Honeywell RP2f/RP4f printers remain on `PrinterTransport.classic`. When the
 paired accessory announces `com.honeywell.print` and the official SDK is
 installed, the plugin automatically routes connect/write/disconnect through
 `Connection_BluetoothEA`. No Honeywell-specific Dart transport is required.
+
+Use the explicit RP4f profile before scanning and connecting:
+
+```dart
+final printer = BlueThermalPlus();
+
+await printer.configure(PrinterProfiles.honeywellRp4f);
+await printer.startScan(transport: PrinterTransport.classic);
+await printer.connect(
+  deviceId: device.id,
+  transport: PrinterTransport.classic,
+);
+await printer.printRawBytes(bytes, transport: PrinterTransport.classic);
+```
 
 The Honeywell binary is not bundled or published with this package. Copy the
 official `HoneywellPrinterSDK.xcframework` to the consuming app:

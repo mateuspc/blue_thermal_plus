@@ -17,6 +17,17 @@ class PrinterProfiles {
     ),
   );
 
+  /// Honeywell RP4f over Bluetooth Classic/ExternalAccessory on iOS.
+  ///
+  /// When HoneywellPrinterSDK is installed, the iOS transport automatically
+  /// routes this protocol through Connection_BluetoothEA.
+  static const honeywellRp4f = PrinterConfig(
+    classic: ClassicConfig(
+      preferredProtocol: "com.honeywell.print",
+      autoDisconnectMs: 20000,
+    ),
+  );
+
   /// ✅ ESP32 Virtual Printer (seu firmware)
   static const esp32VirtualPrinter = PrinterConfig(
     ble: BleConfig(
