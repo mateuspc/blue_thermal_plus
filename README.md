@@ -17,25 +17,26 @@ scalability, and production-grade stability.
 -   Real-time device discovery events\
 -   Unified transport interface\
 -   Epson ePOS SDK transport on iOS (optional SDK install)\
+-   Honeywell RP2f/RP4f PrinterSDK routing on iOS (optional SDK install)\
 -   Production tested
 
 ## 📱 Supported Platforms
 
-| Platform | BLE | Classic | Epson ePOS |
-| --- | --- | --- | --- |
-| Android | ✅ | ✅ | ❌ |
-| iOS | ✅ | ✅ (MFi) | ✅ |
+| Platform | BLE | Classic | Honeywell PrinterSDK | Epson ePOS |
+| --- | --- | --- | --- | --- |
+| Android | ✅ | ✅ | Native Classic path | ❌ |
+| iOS | ✅ | ✅ (MFi) | ✅ | ✅ |
 
 ## 🧠 Architecture
 
 Flutter → TransportRouter → PrinterTransportManager → (BleTransport /
-ClassicTransport / EpsonEposTransport)
+ClassicTransport / HoneywellPrinterSDK bridge / EpsonEposTransport)
 
 ## 🚀 Installation
 
 ``` yaml
 dependencies:
-  blue_thermal_plus: ^0.1.1
+  blue_thermal_plus: ^0.1.2
 ```
 
 Then run:
@@ -129,6 +130,54 @@ privacy keys used by iOS 14+:
 
 If the Epson SDK is missing, `PrinterTransport.epson` remains available but
 emits an `error` event explaining that `libepos2.xcframework` was not found.
+
+## 🧾 Honeywell RP2f/RP4f on iOS
+
+Honeywell RP2f/RP4f printers remain on `PrinterTransport.classic`. When the
+paired accessory announces `com.honeywell.print` and the official SDK is
+installed, the plugin automatically routes connect/write/disconnect through
+`Connection_BluetoothEA`. No Honeywell-specific Dart transport is required.
+
+The Honeywell binary is not bundled or published with this package. Copy the
+official `HoneywellPrinterSDK.xcframework` to the consuming app:
+
+```text
+your_app/ios/Frameworks/HoneywellPrinterSDK.xcframework
+```
+
+Because CocoaPods requires vendored frameworks to be relative to the plugin,
+call the package installer after `flutter_install_all_ios_pods` in the app
+`Podfile`:
+
+```ruby
+target 'Runner' do
+  use_frameworks!
+  flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+
+  plugin_ios_dir = File.expand_path(
+    File.join(__dir__, '.symlinks', 'plugins', 'blue_thermal_plus', 'ios')
+  )
+  require File.join(plugin_ios_dir, 'prepare_optional_sdks.rb')
+  BlueThermalPlusSdkInstaller.prepare(
+    app_ios_dir: __dir__,
+    plugin_ios_dir: plugin_ios_dir,
+  )
+end
+```
+
+Add the protocol to the app `Info.plist`, preserving any Zebra/Epson entries:
+
+```xml
+<key>UISupportedExternalAccessoryProtocols</key>
+<array>
+  <string>com.zebra.rawport</string>
+  <string>com.epson.escpos</string>
+  <string>com.honeywell.print</string>
+</array>
+```
+
+Honeywell PrinterSDK 3.1.109 requires iOS 15.2 or newer. Without the SDK, the
+plugin keeps a direct `EASession` fallback for `com.honeywell.print`.
 
 ## 📢 Events
 

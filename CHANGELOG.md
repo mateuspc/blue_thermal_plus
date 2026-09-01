@@ -1,3 +1,11 @@
+## 0.1.2
+
+### Added
+- Added optional Honeywell PrinterSDK routing for iOS RP2f/RP4f accessories using `com.honeywell.print`.
+- Kept the public Dart API unchanged by selecting the Honeywell SDK automatically inside the Classic transport.
+- Added a direct ExternalAccessory fallback when the proprietary Honeywell SDK is not installed.
+- Excluded `HoneywellPrinterSDK.xcframework` from Git and pub package publication.
+
 ## 0.1.1
 
 ### Fixed

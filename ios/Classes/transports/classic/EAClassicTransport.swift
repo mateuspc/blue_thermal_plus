@@ -4,7 +4,8 @@ import ExternalAccessory
 /// Classic transport on iOS is done via ExternalAccessory (MFi).
 /// This requires:
 /// - Printer paired/connected and visible in EAAccessoryManager.shared().connectedAccessories
-/// - Runner Info.plist includes UISupportedExternalAccessoryProtocols (e.g., com.zebra.rawport)
+/// - Runner Info.plist includes UISupportedExternalAccessoryProtocols
+///   (e.g., com.zebra.rawport or com.honeywell.print)
 final class EAClassicTransport: NSObject, PrinterTransportManager, StreamDelegate {
 
   // MARK: - PrinterTransportManager
@@ -54,8 +55,10 @@ final class EAClassicTransport: NSObject, PrinterTransportManager, StreamDelegat
   }
 
   func connect(deviceId: String) {
+    cancelAutoDisconnect()
+
     // ✅ evita trabalho/efeitos colaterais se ainda não estava conectado
-    if session != nil || outStream != nil || inStream != nil {
+    if activeBackend != .none || session != nil || outStream != nil || inStream != nil {
       disconnect()
     }
 
@@ -66,12 +69,15 @@ final class EAClassicTransport: NSObject, PrinterTransportManager, StreamDelegat
 
     // ✅ Escolha do protocolo:
     // 1) preferredProtocol (se veio e existe no accessory)
-    // 2) com.zebra.rawport (se existir)
-    // 3) primeiro protocol disponível
-    // 4) erro se vazio
+    // 2) com.honeywell.print (se existir)
+    // 3) com.zebra.rawport (se existir)
+    // 4) primeiro protocol disponível
+    // 5) erro se vazio
     let protocolToUse: String
     if let pref = preferredProtocol, accessory.protocolStrings.contains(pref) {
       protocolToUse = pref
+    } else if accessory.protocolStrings.contains(honeywellProtocol) {
+      protocolToUse = honeywellProtocol
     } else if accessory.protocolStrings.contains("com.zebra.rawport") {
       protocolToUse = "com.zebra.rawport"
     } else if let first = accessory.protocolStrings.first {
@@ -79,6 +85,22 @@ final class EAClassicTransport: NSObject, PrinterTransportManager, StreamDelegat
     } else {
       emitter.emit(type: "error", message: "Classic(EA): acessório sem protocolos (protocolStrings vazio)")
       return
+    }
+
+    if protocolToUse == honeywellProtocol, HoneywellPrinterSdkBridge.isSdkAvailable {
+      connectWithHoneywellSdk(
+          accessory: accessory,
+          deviceId: deviceId,
+          protocolString: protocolToUse
+      )
+      return
+    }
+
+    if protocolToUse == honeywellProtocol {
+      emitter.emit(
+          type: "status",
+          message: "Honeywell SDK indisponível; usando ExternalAccessory como fallback"
+      )
     }
 
     emitter.emit(type: "status", message: "Classic(EA): abrindo sessão \(accessory.name) / \(protocolToUse)")
@@ -94,6 +116,8 @@ final class EAClassicTransport: NSObject, PrinterTransportManager, StreamDelegat
     session = s
     outStream = s.outputStream
     inStream = s.inputStream
+    activeBackend = .externalAccessory
+    connectedDevice = ["id": deviceId, "name": accessory.name]
 
     didEmitReady = false
 
@@ -113,7 +137,23 @@ final class EAClassicTransport: NSObject, PrinterTransportManager, StreamDelegat
   }
 
   func disconnect() {
-    let wasConnected = (session != nil || outStream != nil || inStream != nil)
+    cancelAutoDisconnect()
+    let wasConnected = (activeBackend != .none || session != nil || outStream != nil || inStream != nil)
+
+    if activeBackend == .honeywellSdk {
+      let result = honeywellBridgeCall(["action": "disconnect"])
+      activeBackend = .none
+      connectedDevice = nil
+      honeywellReady = false
+
+      if !isOk(result) {
+        emitBridgeError(result, fallback: "Honeywell SDK: falha ao desconectar")
+      }
+      if wasConnected {
+        emitter.emit(type: "disconnected", message: "Honeywell SDK: desconectado")
+      }
+      return
+    }
 
     // Para evitar duplicar READY depois
     didEmitReady = false
@@ -131,6 +171,8 @@ final class EAClassicTransport: NSObject, PrinterTransportManager, StreamDelegat
     outStream = nil
     inStream = nil
     session = nil
+    activeBackend = .none
+    connectedDevice = nil
 
     if wasConnected {
       emitter.emit(type: "disconnected", message: "Classic(EA): desconectado")
@@ -138,6 +180,28 @@ final class EAClassicTransport: NSObject, PrinterTransportManager, StreamDelegat
   }
 
   func printRaw(data: Data) {
+    cancelAutoDisconnect()
+
+    if activeBackend == .honeywellSdk {
+      guard honeywellReady else {
+        emitter.emit(type: "error", message: "Honeywell SDK: conexão ainda não está pronta")
+        return
+      }
+
+      let result = honeywellBridgeCall(["action": "printRaw", "data": data])
+      guard isOk(result) else {
+        emitBridgeError(result, fallback: "Honeywell SDK: falha ao imprimir")
+        return
+      }
+
+      emitter.emit(
+          type: "status",
+          message: "📤 Honeywell SDK: enviado \(data.count) bytes (auto-disconnect \(autoDisconnectMs)ms)"
+      )
+      scheduleAutoDisconnect()
+      return
+    }
+
     guard let o = outStream else {
       emitter.emit(type: "error", message: "Classic(EA): não conectado")
       return
@@ -160,25 +224,34 @@ final class EAClassicTransport: NSObject, PrinterTransportManager, StreamDelegat
 
     emitter.emit(type: "status", message: "📤 Classic(EA): enviado \(written) bytes (auto-disconnect \(autoDisconnectMs)ms)")
 
-    let delaySec = Double(autoDisconnectMs) / 1000.0
-    DispatchQueue.main.asyncAfter(deadline: .now() + delaySec) { [weak self] in
-      self?.disconnect()
-    }
+    scheduleAutoDisconnect()
   }
 
   // MARK: - Init/Deinit
   private let store: DeviceStore
   private let emitter = EventEmitter()
+  private let honeywellBridge = HoneywellPrinterSdkBridge()
+
+  private enum ActiveBackend {
+    case none
+    case externalAccessory
+    case honeywellSdk
+  }
 
   private var session: EASession?
   private var outStream: OutputStream?
   private var inStream: InputStream?
 
   private var didEmitReady = false
+  private var activeBackend: ActiveBackend = .none
+  private var connectedDevice: [String: Any]?
+  private var honeywellReady = false
 
   // ✅ configs
   private var preferredProtocol: String? = nil
   private var autoDisconnectMs: Int = 3000
+  private let honeywellProtocol = "com.honeywell.print"
+  private var autoDisconnectWorkItem: DispatchWorkItem?
 
   private let readBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: 1024)
 
@@ -189,8 +262,118 @@ final class EAClassicTransport: NSObject, PrinterTransportManager, StreamDelegat
   }
 
   deinit {
+    autoDisconnectWorkItem?.cancel()
     readBuffer.deallocate()
     unregisterEA()
+  }
+
+  // MARK: - Honeywell PrinterSDK
+  private lazy var honeywellCallback: HoneywellPrinterEventSink = { [weak self] event in
+    DispatchQueue.main.async {
+      self?.handleHoneywellEvent(event)
+    }
+  }
+
+  private func connectWithHoneywellSdk(
+      accessory: EAAccessory,
+      deviceId: String,
+      protocolString: String
+  ) {
+    activeBackend = .honeywellSdk
+    connectedDevice = ["id": deviceId, "name": accessory.name]
+    honeywellReady = false
+
+    emitter.emit(
+        type: "status",
+        message: "Honeywell SDK: conectando \(accessory.name) / \(protocolString)..."
+    )
+
+    let result = honeywellBridgeCall([
+      "action": "connect",
+      "accessory": accessory,
+      "deviceId": deviceId,
+      "deviceName": accessory.name,
+      "protocol": protocolString
+    ])
+
+    guard isOk(result) else {
+      activeBackend = .none
+      connectedDevice = nil
+      emitBridgeError(result, fallback: "Honeywell SDK: falha ao conectar")
+      return
+    }
+
+    if let message = result["message"] as? String, !message.isEmpty {
+      emitter.emit(type: "status", message: message)
+    }
+  }
+
+  private func handleHoneywellEvent(_ event: [String: Any]) {
+    guard activeBackend == .honeywellSdk,
+          let type = event["type"] as? String else {
+      return
+    }
+
+    switch type {
+    case "connected":
+      honeywellReady = false
+    case "ready":
+      honeywellReady = true
+    case "error", "disconnected":
+      activeBackend = .none
+      connectedDevice = nil
+      honeywellReady = false
+      cancelAutoDisconnect()
+    default:
+      break
+    }
+
+    let eventDevice = event["device"] as? [String: Any]
+    let device = eventDevice ?? (type == "connected" ? connectedDevice : nil)
+    let message = event["message"] as? String
+    var extra = event
+    extra.removeValue(forKey: "type")
+    extra.removeValue(forKey: "device")
+    extra.removeValue(forKey: "message")
+    emitter.emit(type: type, message: message, device: device, extra: extra)
+  }
+
+  private func honeywellBridgeCall(_ args: [String: Any]) -> [String: Any] {
+    honeywellBridge.handle(args, callback: honeywellCallback)
+  }
+
+  private func isOk(_ result: [String: Any]) -> Bool {
+    if let ok = result["ok"] as? Bool {
+      return ok
+    }
+    if let ok = result["ok"] as? NSNumber {
+      return ok.boolValue
+    }
+    return false
+  }
+
+  private func emitBridgeError(_ result: [String: Any], fallback: String) {
+    let message = (result["message"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? fallback
+    emitter.emit(type: "error", message: message)
+  }
+
+  private func scheduleAutoDisconnect() {
+    cancelAutoDisconnect()
+    guard autoDisconnectMs > 0 else { return }
+
+    let workItem = DispatchWorkItem { [weak self] in
+      self?.disconnect()
+    }
+    autoDisconnectWorkItem = workItem
+    DispatchQueue.main.asyncAfter(
+        deadline: .now() + (Double(autoDisconnectMs) / 1000.0),
+        execute: workItem
+    )
+  }
+
+  private func cancelAutoDisconnect() {
+    autoDisconnectWorkItem?.cancel()
+    autoDisconnectWorkItem = nil
   }
 
   // MARK: - StreamDelegate
