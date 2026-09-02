@@ -57,6 +57,14 @@ final class EAClassicTransport: NSObject, PrinterTransportManager, StreamDelegat
   func connect(deviceId: String) {
     cancelAutoDisconnect()
 
+    if activeBackend == .honeywellSdk, honeywellPendingPrints > 0 {
+      emitter.emit(
+          type: "error",
+          message: "Honeywell SDK: aguarde a impressão terminar antes de reconectar"
+      )
+      return
+    }
+
     // ✅ evita trabalho/efeitos colaterais se ainda não estava conectado
     if activeBackend != .none || session != nil || outStream != nil || inStream != nil {
       disconnect()
@@ -142,13 +150,14 @@ final class EAClassicTransport: NSObject, PrinterTransportManager, StreamDelegat
 
     if activeBackend == .honeywellSdk {
       let result = honeywellBridgeCall(["action": "disconnect"])
+      if !isOk(result) {
+        emitBridgeError(result, fallback: "Honeywell SDK: falha ao desconectar")
+        return
+      }
+
       activeBackend = .none
       connectedDevice = nil
       honeywellReady = false
-
-      if !isOk(result) {
-        emitBridgeError(result, fallback: "Honeywell SDK: falha ao desconectar")
-      }
       if wasConnected {
         emitter.emit(type: "disconnected", message: "Honeywell SDK: desconectado")
       }
@@ -180,35 +189,76 @@ final class EAClassicTransport: NSObject, PrinterTransportManager, StreamDelegat
   }
 
   func printRaw(data: Data) {
+    printRaw(data: data) { _ in }
+  }
+
+  func printRaw(data: Data, completion: @escaping PrinterWriteCompletion) {
     cancelAutoDisconnect()
 
     if activeBackend == .honeywellSdk {
       guard honeywellReady else {
-        emitter.emit(type: "error", message: "Honeywell SDK: conexão ainda não está pronta")
+        let message = "Honeywell SDK: conexão ainda não está pronta"
+        emitter.emit(type: "error", message: message)
+        completion(PrinterWriteFailure(code: "not_ready", message: message))
         return
       }
 
-      let result = honeywellBridgeCall(["action": "printRaw", "data": data])
-      guard isOk(result) else {
-        emitBridgeError(result, fallback: "Honeywell SDK: falha ao imprimir")
-        return
-      }
-
+      honeywellPendingPrints += 1
+      let timeoutMs = honeywellDrainTimeoutMs(bytes: data.count)
       emitter.emit(
           type: "status",
-          message: "📤 Honeywell SDK: enviado \(data.count) bytes (auto-disconnect \(autoDisconnectMs)ms)"
+          message: "Honeywell SDK: enviando \(data.count) bytes e aguardando a fila nativa..."
       )
-      scheduleAutoDisconnect()
+
+      honeywellBridge.printRawData(
+          data,
+          timeoutMilliseconds: timeoutMs
+      ) { [weak self] result in
+        guard let self else {
+          completion(
+              PrinterWriteFailure(
+                  code: "transport_released",
+                  message: "Honeywell SDK: transporte liberado durante a impressão."
+              )
+          )
+          return
+        }
+
+        self.honeywellPendingPrints = max(0, self.honeywellPendingPrints - 1)
+
+        guard self.isOk(result) else {
+          let failure = self.writeFailure(
+              result,
+              fallback: "Honeywell SDK: falha ao imprimir"
+          )
+          self.emitter.emit(type: "error", message: failure.message)
+          completion(failure)
+          return
+        }
+
+        self.emitter.emit(
+            type: "status",
+            message: "Honeywell SDK: fila de envio concluída (\(data.count) bytes)"
+        )
+        if self.honeywellPendingPrints == 0 {
+          self.scheduleAutoDisconnect()
+        }
+        completion(nil)
+      }
       return
     }
 
     guard let o = outStream else {
-      emitter.emit(type: "error", message: "Classic(EA): não conectado")
+      let message = "Classic(EA): não conectado"
+      emitter.emit(type: "error", message: message)
+      completion(PrinterWriteFailure(code: "not_connected", message: message))
       return
     }
 
     guard o.hasSpaceAvailable else {
-      emitter.emit(type: "error", message: "Classic(EA): buffer cheio (sem espaço)")
+      let message = "Classic(EA): buffer cheio (sem espaço)"
+      emitter.emit(type: "error", message: message)
+      completion(PrinterWriteFailure(code: "buffer_full", message: message))
       return
     }
 
@@ -218,13 +268,23 @@ final class EAClassicTransport: NSObject, PrinterTransportManager, StreamDelegat
     }
 
     if written <= 0 {
-      emitter.emit(type: "error", message: "Classic(EA): erro de escrita")
+      let message = "Classic(EA): erro de escrita"
+      emitter.emit(type: "error", message: message)
+      completion(PrinterWriteFailure(code: "write_failed", message: message))
+      return
+    }
+
+    if written != data.count {
+      let message = "Classic(EA): escrita parcial (\(written) de \(data.count) bytes)"
+      emitter.emit(type: "error", message: message)
+      completion(PrinterWriteFailure(code: "partial_write", message: message))
       return
     }
 
     emitter.emit(type: "status", message: "📤 Classic(EA): enviado \(written) bytes (auto-disconnect \(autoDisconnectMs)ms)")
 
     scheduleAutoDisconnect()
+    completion(nil)
   }
 
   // MARK: - Init/Deinit
@@ -246,6 +306,7 @@ final class EAClassicTransport: NSObject, PrinterTransportManager, StreamDelegat
   private var activeBackend: ActiveBackend = .none
   private var connectedDevice: [String: Any]?
   private var honeywellReady = false
+  private var honeywellPendingPrints = 0
 
   // ✅ configs
   private var preferredProtocol: String? = nil
@@ -355,6 +416,20 @@ final class EAClassicTransport: NSObject, PrinterTransportManager, StreamDelegat
   private func emitBridgeError(_ result: [String: Any], fallback: String) {
     let message = (result["message"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? fallback
     emitter.emit(type: "error", message: message)
+  }
+
+  private func writeFailure(
+      _ result: [String: Any],
+      fallback: String
+  ) -> PrinterWriteFailure {
+    let code = (result["code"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "write_failed"
+    let message = (result["message"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? fallback
+    return PrinterWriteFailure(code: code, message: message)
+  }
+
+  private func honeywellDrainTimeoutMs(bytes: Int) -> Int {
+    let transferEstimateMs = Int(ceil((Double(max(1, bytes)) / 2000.0) * 1000.0))
+    return min(120_000, max(30_000, transferEstimateMs + 15_000))
   }
 
   private func scheduleAutoDisconnect() {

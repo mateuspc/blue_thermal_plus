@@ -4,7 +4,7 @@
 #
 Pod::Spec.new do |s|
   s.name             = 'blue_thermal_plus'
-  s.version          = '0.1.3'
+  s.version          = '0.1.4'
   s.summary          = 'Flutter thermal printer plugin for BLE, Classic, Honeywell and Epson ePOS.'
   s.description      = <<-DESC
 Flutter thermal printer plugin with Android and iOS transports for BLE,

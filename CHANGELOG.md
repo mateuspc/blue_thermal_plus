@@ -1,3 +1,9 @@
+## 0.1.4
+
+- Wait for the Honeywell PrinterSDK background send queue to drain before completing `printRawBytes` on iOS.
+- Serialize Honeywell writes and protect active print jobs from premature disconnects.
+- Disable the RP4f fixed auto-disconnect timer so the app can close the connection after its print flush.
+
 ## 0.1.3
 
 ### Added

@@ -24,7 +24,9 @@ class PrinterProfiles {
   static const honeywellRp4f = PrinterConfig(
     classic: ClassicConfig(
       preferredProtocol: "com.honeywell.print",
-      autoDisconnectMs: 20000,
+      // The Honeywell SDK drains its asynchronous queue before printRawBytes
+      // completes. Let the app disconnect explicitly after its print flush.
+      autoDisconnectMs: 0,
     ),
   );
 
