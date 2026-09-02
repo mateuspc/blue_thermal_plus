@@ -129,8 +129,24 @@ public final class BlueThermalPlusPlugin: NSObject, FlutterPlugin, FlutterStream
         result(FlutterError(code: "bad_args", message: "data missing", details: nil))
         return
       }
-      manager.printRaw(data: typed.data)
-      result(nil)
+      if transport == .classic {
+        classic.printRaw(data: typed.data) { failure in
+          if let failure {
+            result(
+                FlutterError(
+                    code: failure.code,
+                    message: failure.message,
+                    details: nil
+                )
+            )
+          } else {
+            result(nil)
+          }
+        }
+      } else {
+        manager.printRaw(data: typed.data)
+        result(nil)
+      }
 
     case "getDiscoveredDevices":
       if transport == .epson {

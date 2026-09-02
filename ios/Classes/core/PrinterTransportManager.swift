@@ -1,5 +1,12 @@
 import Foundation
 
+struct PrinterWriteFailure: Error {
+  let code: String
+  let message: String
+}
+
+typealias PrinterWriteCompletion = (PrinterWriteFailure?) -> Void
+
 protocol PrinterTransportManager: AnyObject {
   /// Emits events to Flutter as a Dictionary payload.
   /// Example:

@@ -6,7 +6,7 @@ void main() {
     const profile = PrinterProfiles.honeywellRp4f;
 
     expect(profile.classic.preferredProtocol, 'com.honeywell.print');
-    expect(profile.classic.autoDisconnectMs, 20000);
+    expect(profile.classic.autoDisconnectMs, 0);
     expect(
       profile.toMap()['classic'],
       containsPair('preferredProtocol', 'com.honeywell.print'),
