@@ -16,10 +16,9 @@ final class EAClassicTransport: NSObject, PrinterTransportManager, StreamDelegat
   // ✅ Configurações vindas do Flutter
   // - preferredProtocol: ex "com.zebra.rawport" (nil -> auto)
   // - autoDisconnectMs: default 3000
-  func applyClassicConfig(preferredProtocol: String?, autoDisconnectMs: Int?) {
-    if let p = preferredProtocol {
-      self.preferredProtocol = p.isEmpty ? nil : p
-    }
+  func applyClassicConfig(preferredProtocol: String?, autoDisconnectMs: Int?, backend: String?) {
+    self.preferredProtocol = preferredProtocol.flatMap { $0.isEmpty ? nil : $0 }
+    self.configuredBackend = backend ?? "generic"
 
     if let ms = autoDisconnectMs {
       self.autoDisconnectMs = max(0, ms)
@@ -27,7 +26,7 @@ final class EAClassicTransport: NSObject, PrinterTransportManager, StreamDelegat
 
     emitter.emit(
         type: "status",
-        message: "Classic(EA): config aplicado protocol=\(self.preferredProtocol ?? "auto") autoDisconnectMs=\(self.autoDisconnectMs)"
+        message: "Classic(EA): config aplicado protocol=\(self.preferredProtocol ?? "auto") backend=\(self.configuredBackend) autoDisconnectMs=\(self.autoDisconnectMs)"
     )
   }
 
@@ -64,6 +63,13 @@ final class EAClassicTransport: NSObject, PrinterTransportManager, StreamDelegat
       )
       return
     }
+    if activeBackend == .brotherSdk, brotherPendingPrints > 0 {
+      emitter.emit(
+          type: "error",
+          message: "Brother SDK: aguarde a impressão terminar antes de reconectar"
+      )
+      return
+    }
 
     // ✅ evita trabalho/efeitos colaterais se ainda não estava conectado
     if activeBackend != .none || session != nil || outStream != nil || inStream != nil {
@@ -77,13 +83,16 @@ final class EAClassicTransport: NSObject, PrinterTransportManager, StreamDelegat
 
     // ✅ Escolha do protocolo:
     // 1) preferredProtocol (se veio e existe no accessory)
-    // 2) com.honeywell.print (se existir)
-    // 3) com.zebra.rawport (se existir)
-    // 4) primeiro protocol disponível
-    // 5) erro se vazio
+    // 2) com.brother.ptcbp (quando o backend Brother foi selecionado)
+    // 3) com.honeywell.print (se existir)
+    // 4) com.zebra.rawport (se existir)
+    // 5) primeiro protocol disponível
+    // 6) erro se vazio
     let protocolToUse: String
     if let pref = preferredProtocol, accessory.protocolStrings.contains(pref) {
       protocolToUse = pref
+    } else if configuredBackend == "brother", accessory.protocolStrings.contains(brotherProtocol) {
+      protocolToUse = brotherProtocol
     } else if accessory.protocolStrings.contains(honeywellProtocol) {
       protocolToUse = honeywellProtocol
     } else if accessory.protocolStrings.contains("com.zebra.rawport") {
@@ -92,6 +101,25 @@ final class EAClassicTransport: NSObject, PrinterTransportManager, StreamDelegat
       protocolToUse = first
     } else {
       emitter.emit(type: "error", message: "Classic(EA): acessório sem protocolos (protocolStrings vazio)")
+      return
+    }
+
+    if configuredBackend == "brother" {
+      guard protocolToUse == brotherProtocol else {
+        emitter.emit(
+            type: "error",
+            message: "Brother SDK: o acessório não anuncia o protocolo \(brotherProtocol)"
+        )
+        return
+      }
+      guard BrotherPrinterSdkBridge.isSdkAvailable else {
+        emitter.emit(
+            type: "error",
+            message: "Brother Print SDK não encontrado. Adicione BRLMPrinterKit.xcframework ao app."
+        )
+        return
+      }
+      connectWithBrotherSdk(accessory: accessory, deviceId: deviceId)
       return
     }
 
@@ -160,6 +188,24 @@ final class EAClassicTransport: NSObject, PrinterTransportManager, StreamDelegat
       honeywellReady = false
       if wasConnected {
         emitter.emit(type: "disconnected", message: "Honeywell SDK: desconectado")
+      }
+      return
+    }
+
+    if activeBackend == .brotherSdk {
+      activeBackend = .none
+      connectedDevice = nil
+      brotherReady = false
+      brotherQueue.async { [weak self] in
+        guard let self else { return }
+        let result = self.brotherBridge.disconnectPrinter()
+        DispatchQueue.main.async {
+          if !self.isOk(result) {
+            self.emitBridgeError(result, fallback: "Brother SDK: falha ao desconectar")
+          } else if wasConnected {
+            self.emitter.emit(type: "disconnected", message: "Brother SDK: desconectado")
+          }
+        }
       }
       return
     }
@@ -248,6 +294,49 @@ final class EAClassicTransport: NSObject, PrinterTransportManager, StreamDelegat
       return
     }
 
+    if activeBackend == .brotherSdk {
+      guard brotherReady else {
+        let message = "Brother SDK: conexão ainda não está pronta"
+        emitter.emit(type: "error", message: message)
+        completion(PrinterWriteFailure(code: "not_ready", message: message))
+        return
+      }
+
+      brotherPendingPrints += 1
+      emitter.emit(type: "status", message: "Brother SDK: enviando \(data.count) bytes...")
+      brotherQueue.async { [weak self] in
+        guard let self else {
+          DispatchQueue.main.async {
+            completion(
+                PrinterWriteFailure(
+                    code: "transport_released",
+                    message: "Brother SDK: transporte liberado durante a impressão."
+                )
+            )
+          }
+          return
+        }
+        let result = self.brotherBridge.printRawData(data)
+        DispatchQueue.main.async {
+          self.brotherPendingPrints = max(0, self.brotherPendingPrints - 1)
+          guard self.isOk(result) else {
+            let failure = self.writeFailure(result, fallback: "Brother SDK: falha ao imprimir")
+            self.emitter.emit(type: "error", message: failure.message)
+            completion(failure)
+            return
+          }
+
+          let message = (result["message"] as? String) ?? "Brother SDK: impressão enviada"
+          self.emitter.emit(type: "status", message: message)
+          if self.brotherPendingPrints == 0 {
+            self.scheduleAutoDisconnect()
+          }
+          completion(nil)
+        }
+      }
+      return
+    }
+
     guard let o = outStream else {
       let message = "Classic(EA): não conectado"
       emitter.emit(type: "error", message: message)
@@ -291,11 +380,14 @@ final class EAClassicTransport: NSObject, PrinterTransportManager, StreamDelegat
   private let store: DeviceStore
   private let emitter = EventEmitter()
   private let honeywellBridge = HoneywellPrinterSdkBridge()
+  private let brotherBridge = BrotherPrinterSdkBridge()
+  private let brotherQueue = DispatchQueue(label: "blue_thermal_plus.brother")
 
   private enum ActiveBackend {
     case none
     case externalAccessory
     case honeywellSdk
+    case brotherSdk
   }
 
   private var session: EASession?
@@ -307,11 +399,15 @@ final class EAClassicTransport: NSObject, PrinterTransportManager, StreamDelegat
   private var connectedDevice: [String: Any]?
   private var honeywellReady = false
   private var honeywellPendingPrints = 0
+  private var brotherReady = false
+  private var brotherPendingPrints = 0
 
   // ✅ configs
   private var preferredProtocol: String? = nil
+  private var configuredBackend = "generic"
   private var autoDisconnectMs: Int = 3000
   private let honeywellProtocol = "com.honeywell.print"
+  private let brotherProtocol = "com.brother.ptcbp"
   private var autoDisconnectWorkItem: DispatchWorkItem?
 
   private let readBuffer = UnsafeMutablePointer<UInt8>.allocate(capacity: 1024)
@@ -430,6 +526,44 @@ final class EAClassicTransport: NSObject, PrinterTransportManager, StreamDelegat
   private func honeywellDrainTimeoutMs(bytes: Int) -> Int {
     let transferEstimateMs = Int(ceil((Double(max(1, bytes)) / 2000.0) * 1000.0))
     return min(120_000, max(30_000, transferEstimateMs + 15_000))
+  }
+
+  // MARK: - Brother Print SDK
+  private func connectWithBrotherSdk(accessory: EAAccessory, deviceId: String) {
+    let serialNumber = accessory.serialNumber
+    guard !serialNumber.isEmpty else {
+      emitter.emit(type: "error", message: "Brother SDK: número de série Bluetooth ausente")
+      return
+    }
+
+    activeBackend = .brotherSdk
+    connectedDevice = ["id": deviceId, "name": accessory.name]
+    brotherReady = false
+    emitter.emit(type: "status", message: "Brother SDK: conectando \(accessory.name)...")
+
+    brotherQueue.async { [weak self] in
+      guard let self else { return }
+      let result = self.brotherBridge.connect(
+          withSerialNumber: serialNumber,
+          deviceId: deviceId,
+          deviceName: accessory.name
+      )
+      DispatchQueue.main.async {
+        guard self.activeBackend == .brotherSdk else { return }
+        guard self.isOk(result) else {
+          self.activeBackend = .none
+          self.connectedDevice = nil
+          self.brotherReady = false
+          self.emitBridgeError(result, fallback: "Brother SDK: falha ao conectar")
+          return
+        }
+
+        self.brotherReady = true
+        let device = ["id": deviceId, "name": accessory.name]
+        self.emitter.emit(type: "connected", device: device)
+        self.emitter.emit(type: "ready", message: "Brother SDK: pronto", device: device)
+      }
+    }
   }
 
   private func scheduleAutoDisconnect() {

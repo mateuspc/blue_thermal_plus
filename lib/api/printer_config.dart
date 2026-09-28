@@ -31,6 +31,14 @@ class BleConfig {
   };
 }
 
+enum ClassicPrinterBackend {
+  generic,
+  honeywell,
+  brother;
+
+  String get nativeValue => name;
+}
+
 class ClassicConfig {
   /// Ex: "com.zebra.rawport"
   /// Se null -> usa o primeiro protocolo disponível do accessory.
@@ -38,11 +46,20 @@ class ClassicConfig {
 
   final int autoDisconnectMs; // default: 20000
 
-  const ClassicConfig({this.preferredProtocol, this.autoDisconnectMs = 20000});
+  /// Selects an optional vendor SDK while keeping Classic as the public
+  /// transport. The default preserves the raw RFCOMM/ExternalAccessory path.
+  final ClassicPrinterBackend backend;
+
+  const ClassicConfig({
+    this.preferredProtocol,
+    this.autoDisconnectMs = 20000,
+    this.backend = ClassicPrinterBackend.generic,
+  });
 
   Map<String, dynamic> toMap() => {
     "preferredProtocol": preferredProtocol,
     "autoDisconnectMs": autoDisconnectMs,
+    "backend": backend.nativeValue,
   };
 }
 

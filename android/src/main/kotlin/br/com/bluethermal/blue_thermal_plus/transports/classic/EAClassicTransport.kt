@@ -8,6 +8,7 @@ import android.os.Looper
 import br.com.bluethermal.blue_thermal_plus.core.PrinterTransportManager
 import br.com.bluethermal.blue_thermal_plus.shared.DeviceStore
 import br.com.bluethermal.blue_thermal_plus.shared.EventEmitter
+import br.com.bluethermal.blue_thermal_plus.transports.brother.BrotherPrinterSdkBridge
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -42,6 +43,9 @@ class ClassicTransport(
     private var autoDisconnectMs = 15000L   // ✅ maior por padrão
     private var chunkSize = 512             // ✅ chunk no classic
     private var chunkDelayMs = 10L          // ✅ pequeno delay para buffer
+    private var configuredBackend = "generic"
+    @Volatile private var activeBackend = "generic"
+    private val brotherBridge by lazy { BrotherPrinterSdkBridge(adapter) }
 
     // handler/disconnect
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -52,6 +56,7 @@ class ClassicTransport(
         if (config == null) return
 
         val preferredProtocol = config["preferredProtocol"] as? String
+        configuredBackend = config["backend"] as? String ?: "generic"
 
         (config["autoDisconnectMs"] as? Int)?.let { this.autoDisconnectMs = it.toLong() }
         (config["chunkSize"] as? Int)?.let { if (it > 0) this.chunkSize = it }
@@ -60,7 +65,8 @@ class ClassicTransport(
         emitter.emit(
             type = "status",
             message = "Classic: config aplicado protocol=${preferredProtocol ?: "SPP(Default)"} " +
-                    "autoDiscMs=$autoDisconnectMs chunkSize=$chunkSize chunkDelayMs=$chunkDelayMs"
+                    "backend=$configuredBackend autoDiscMs=$autoDisconnectMs " +
+                    "chunkSize=$chunkSize chunkDelayMs=$chunkDelayMs"
         )
     }
 
@@ -96,6 +102,11 @@ class ClassicTransport(
     }
 
     override fun connect(deviceId: String) {
+        if (activeBackend == "brother") {
+            brotherBridge.disconnect()
+            activeBackend = "generic"
+        }
+
         // se já conectado, desconecta
         if (socket != null && socket!!.isConnected) {
             disconnect()
@@ -109,6 +120,27 @@ class ClassicTransport(
             emitter.emit("error", "Classic: dispositivo não encontrado: $deviceId")
             return
         }
+
+        if (configuredBackend == "brother") {
+            activeBackend = "brother"
+            Thread {
+                emitter.emit("status", "Brother SDK: abrindo canal para ${device.name}...")
+                val sdkResult = brotherBridge.connect(device.address)
+                if (sdkResult.ok) {
+                    emitter.emit(
+                        "connected",
+                        device = mapOf("id" to device.address, "name" to (device.name ?: "Brother")),
+                    )
+                    emitter.emit("ready", "Brother SDK: pronto para imprimir")
+                } else {
+                    activeBackend = "generic"
+                    emitter.emit("error", sdkResult.message, extra = mapOf("code" to sdkResult.code))
+                }
+            }.start()
+            return
+        }
+
+        activeBackend = "generic"
 
         Thread {
             try {
@@ -149,11 +181,26 @@ class ClassicTransport(
     override fun disconnect() {
         isReading = false
         cancelAutoDisconnect()
+        if (activeBackend == "brother") {
+            val result = brotherBridge.disconnect()
+            activeBackend = "generic"
+            if (!result.ok) {
+                emitter.emit("error", result.message, extra = mapOf("code" to result.code))
+                return
+            }
+            emitter.emit("disconnected", result.message)
+            return
+        }
         safeClose()
         emitter.emit("disconnected", "Classic: desconectado")
     }
 
     override fun printRaw(data: ByteArray) {
+        if (activeBackend == "brother") {
+            printBrotherRaw(data)
+            return
+        }
+
         val out = outputStream
         if (out == null) {
             emitter.emit("error", "Classic: não conectado")
@@ -203,6 +250,27 @@ class ClassicTransport(
             } catch (e: Exception) {
                 emitter.emit("error", "Classic: erro inesperado na escrita: ${e.message}")
                 disconnect()
+            } finally {
+                isPrinting = false
+            }
+        }.start()
+    }
+
+    private fun printBrotherRaw(data: ByteArray) {
+        if (isPrinting) {
+            emitter.emit("status", "Brother SDK: impressão já está em andamento")
+            return
+        }
+
+        isPrinting = true
+        Thread {
+            try {
+                val result = brotherBridge.printRaw(data)
+                if (result.ok) {
+                    emitter.emit("status", result.message)
+                } else {
+                    emitter.emit("error", result.message, extra = mapOf("code" to result.code))
+                }
             } finally {
                 isPrinting = false
             }

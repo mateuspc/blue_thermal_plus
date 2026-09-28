@@ -1,3 +1,9 @@
+## 0.2.0
+
+- Add the opt-in Brother Print SDK backend for Android and iOS Classic printers.
+- Add the `PrinterProfiles.brotherRj4235B` profile for raw CPCL printing.
+- Keep proprietary Brother binaries outside the published plugin and load them from the host app.
+
 ## 0.1.4
 
 - Wait for the Honeywell PrinterSDK background send queue to drain before completing `printRawBytes` on iOS.

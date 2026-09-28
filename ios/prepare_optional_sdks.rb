@@ -6,6 +6,7 @@ module BlueThermalPlusSdkInstaller
   OPTIONAL_SDKS = [
     'libepos2.xcframework',
     'HoneywellPrinterSDK.xcframework',
+    'BRLMPrinterKit.xcframework',
   ].freeze
 
   def self.prepare(app_ios_dir:, plugin_ios_dir:)
