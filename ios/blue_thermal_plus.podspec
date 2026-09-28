@@ -4,12 +4,12 @@
 #
 Pod::Spec.new do |s|
   s.name             = 'blue_thermal_plus'
-  s.version          = '0.1.4'
-  s.summary          = 'Flutter thermal printer plugin for BLE, Classic, Honeywell and Epson ePOS.'
+  s.version          = '0.2.0'
+  s.summary          = 'Flutter thermal printer plugin for BLE, Classic, Brother, Honeywell and Epson ePOS.'
   s.description      = <<-DESC
 Flutter thermal printer plugin with Android and iOS transports for BLE,
-Bluetooth Classic, optional Honeywell PrinterSDK and optional Epson ePOS SDK
-support on iOS.
+Bluetooth Classic, optional Brother Print SDK, optional Honeywell PrinterSDK
+and optional Epson ePOS SDK support on iOS.
                        DESC
   s.homepage         = 'https://bluethermalplus.web.app/'
   s.license          = { :file => '../LICENSE' }
@@ -41,6 +41,16 @@ support on iOS.
     vendored_frameworks << honeywell_path
     # HoneywellPrinterSDK 3.1.109 declares iOS 15.2 as its binary minimum.
     s.ios.deployment_target = '15.2'
+  end
+
+  brother_relative_path = 'Frameworks/BRLMPrinterKit.xcframework'
+  brother_plugin_path = File.join(__dir__, brother_relative_path)
+  brother_path = brother_relative_path if File.exist?(brother_plugin_path)
+
+  if brother_path
+    vendored_frameworks << brother_path
+    # Brother Print SDK 4.13.2 declares iOS 14 as its binary minimum.
+    s.ios.deployment_target = honeywell_path ? '15.2' : '14.0'
   end
 
   unless vendored_frameworks.empty?

@@ -18,19 +18,21 @@ scalability, and production-grade stability.
 -   Unified transport interface\
 -   Epson ePOS SDK transport on iOS (optional SDK install)\
 -   Honeywell RP2f/RP4f PrinterSDK routing on iOS (optional SDK install)\
+-   Brother Print SDK routing on Android and iOS (optional SDK install)\
 -   Production tested
 
 ## 📱 Supported Platforms
 
-| Platform | BLE | Classic | Honeywell PrinterSDK | Epson ePOS |
-| --- | --- | --- | --- | --- |
-| Android | ✅ | ✅ | Native Classic path | ❌ |
-| iOS | ✅ | ✅ (MFi) | ✅ | ✅ |
+| Platform | BLE | Classic | Brother Print SDK | Honeywell PrinterSDK | Epson ePOS |
+| --- | --- | --- | --- | --- | --- |
+| Android | ✅ | ✅ | ✅ | Native Classic path | ❌ |
+| iOS | ✅ | ✅ (MFi) | ✅ | ✅ | ✅ |
 
 ## 🧠 Architecture
 
 Flutter → TransportRouter → PrinterTransportManager → (BleTransport /
-ClassicTransport / HoneywellPrinterSDK bridge / EpsonEposTransport)
+ClassicTransport / Brother Print SDK bridge / HoneywellPrinterSDK bridge /
+EpsonEposTransport)
 
 ## 🚀 Installation
 
@@ -192,6 +194,56 @@ Add the protocol to the app `Info.plist`, preserving any Zebra/Epson entries:
 
 Honeywell PrinterSDK 3.1.109 requires iOS 15.2 or newer. Without the SDK, the
 plugin keeps a direct `EASession` fallback for `com.honeywell.print`.
+
+## 🧾 Brother RJ-4235B
+
+Brother printers remain on `PrinterTransport.classic`. Select the explicit
+profile so the native layer uses Brother's SDK while keeping the raw CPCL byte
+payload unchanged:
+
+```dart
+final printer = BlueThermalPlus();
+
+await printer.configure(PrinterProfiles.brotherRj4235B);
+await printer.startScan(transport: PrinterTransport.classic);
+await printer.connect(
+  deviceId: device.id,
+  transport: PrinterTransport.classic,
+);
+await printer.printRawBytes(bytes, transport: PrinterTransport.classic);
+```
+
+The proprietary SDK binaries are intentionally not included in this package.
+Download Brother Print SDK 4.13.2 (or a compatible version accepted under
+Brother's license), then place the files in the consuming app:
+
+```text
+your_app/android/Frameworks/BrotherPrintLibrary.aar
+your_app/ios/Frameworks/BRLMPrinterKit.xcframework
+```
+
+Use the same `Podfile` installer shown above for iOS and add Brother's MFi
+protocol to the app `Info.plist`:
+
+```xml
+<key>UISupportedExternalAccessoryProtocols</key>
+<array>
+  <string>com.brother.ptcbp</string>
+</array>
+```
+
+The Android integration loads the AAR from the host app without making the
+proprietary SDK a required plugin dependency. Add it to the host application's
+Gradle dependencies (Kotlin DSL example):
+
+```kotlin
+dependencies {
+  implementation(files("../Frameworks/BrotherPrintLibrary.aar"))
+}
+```
+
+On iOS, the bridge requires iOS 14 or newer and reports an explicit error when
+the framework is absent.
 
 ## 📢 Events
 

@@ -27,6 +27,20 @@ class PrinterProfiles {
       // The Honeywell SDK drains its asynchronous queue before printRawBytes
       // completes. Let the app disconnect explicitly after its print flush.
       autoDisconnectMs: 0,
+      backend: ClassicPrinterBackend.honeywell,
+    ),
+  );
+
+  /// Brother RJ-4235B through the official Brother Print SDK.
+  ///
+  /// The host application must provide BrotherPrintLibrary.aar on Android and
+  /// BRLMPrinterKit.xcframework on iOS. The public plugin does not redistribute
+  /// those proprietary binaries.
+  static const brotherRj4235B = PrinterConfig(
+    classic: ClassicConfig(
+      preferredProtocol: "com.brother.ptcbp",
+      autoDisconnectMs: 0,
+      backend: ClassicPrinterBackend.brother,
     ),
   );
 

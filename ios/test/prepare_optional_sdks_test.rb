@@ -12,10 +12,14 @@ class PrepareOptionalSdksTest < Minitest::Test
       plugin_ios_dir = File.join(root, 'plugin', 'ios')
       FileUtils.mkdir_p(File.join(app_ios_dir, 'Frameworks', 'HoneywellPrinterSDK.xcframework'))
       FileUtils.mkdir_p(File.join(app_ios_dir, 'Frameworks', 'libepos2.xcframework'))
+      FileUtils.mkdir_p(File.join(app_ios_dir, 'Frameworks', 'BRLMPrinterKit.xcframework'))
       FileUtils.mkdir_p(plugin_ios_dir)
       FileUtils.touch(File.join(plugin_ios_dir, 'blue_thermal_plus.podspec'))
       FileUtils.touch(
         File.join(app_ios_dir, 'Frameworks', 'HoneywellPrinterSDK.xcframework', 'Info.plist')
+      )
+      FileUtils.touch(
+        File.join(app_ios_dir, 'Frameworks', 'BRLMPrinterKit.xcframework', 'Info.plist')
       )
 
       result = BlueThermalPlusSdkInstaller.prepare(
@@ -28,6 +32,9 @@ class PrepareOptionalSdksTest < Minitest::Test
         File.join(plugin_ios_dir, 'Frameworks', 'HoneywellPrinterSDK.xcframework', 'Info.plist')
       )
       assert Dir.exist?(File.join(plugin_ios_dir, 'Frameworks', 'libepos2.xcframework'))
+      assert File.exist?(
+        File.join(plugin_ios_dir, 'Frameworks', 'BRLMPrinterKit.xcframework', 'Info.plist')
+      )
     end
   end
 

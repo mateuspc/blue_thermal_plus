@@ -187,10 +187,12 @@ public final class BlueThermalPlusPlugin: NSObject, FlutterPlugin, FlutterStream
   private func applyClassicConfigFrom(_ args: [String: Any]) {
     let preferredProtocol = args["preferredProtocol"] as? String
     let autoDisconnectMs = args["autoDisconnectMs"] as? Int
+    let backend = args["backend"] as? String
 
     classic.applyClassicConfig(
         preferredProtocol: preferredProtocol,
-        autoDisconnectMs: autoDisconnectMs
+        autoDisconnectMs: autoDisconnectMs,
+        backend: backend
     )
   }
 
